@@ -13,6 +13,8 @@ class PROJDIR():
     CS_500: Path = Path(r"X:\RESEARCH AND DEVELOPMENT\DrawingManager\FOL-005-TestFolder#2\Oil Water Seperators\CoolSkim\CS-500-019")
     BOM: Path = Path(r"X:\RESEARCH AND DEVELOPMENT\DrawingManager\FOL-007-TestFolder#3-BOMPulling")
     
+    
 @dataclass
 class PROJDATA():
-    FILE_TABLE: Path = Path(r"X:\RESEARCH AND DEVELOPMENT\DrawingManager\FOL-001-TestProgram#1\file_table.pickle")
+    FILE_TABLE: Path = Path(r".\file_table.pickle")
+    ECN: Path = Path(r"X:\RESEARCH AND DEVELOPMENT\DrawingManager\FOL-008-TestFoler#4-ECN\ECN-01123.xlsx")

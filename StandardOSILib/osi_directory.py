@@ -33,6 +33,9 @@ class OSIDIR:
     RENDER: Path = Path('X:/RENDERING')
     TOOLS: Path = Path('X:/TOOLS')
     
+    # Append these on during merge of proects
+    ECN_FOLDER: Path = Path(r"X:\ENGINEERING CHANGE NOTICE")
+    
 @dataclass
 class APPCONFIG:
     """ These are shared config files and structures that can be used to make changes to the program

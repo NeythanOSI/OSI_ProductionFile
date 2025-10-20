@@ -12,6 +12,8 @@ from StandardOSILib.osi_directory import PART_NUM_REGEX, OSIDIR
 from StandardOSILib.osi_directory_append import PREFIX_LOOKUP_TABLE
 from project_data import PROJDATA, PROJDIR
 
+import openpyxl
+
 def get_dwg_number_rev(file: Path|WindowsPath|PosixPath) -> tuple[str|None]:
     """Take a Pathlib Path to a drawing PDF and returns the drawing number and revision.
 
@@ -77,3 +79,68 @@ def get_available_dwg_revisions(dwg: str) -> dict[str, Path|WindowsPath|PosixPat
                 continue
             available_revision[rev] = Path(file.path)
     return available_revision
+
+@dataclass
+class EcnFile():
+    ecn_name: str
+    ecn_folder: Path
+    ecn_drawings: Path
+    ecn_file: Path
+
+def get_ecn(ecn_number: str) -> EcnFile:
+    ecn_name = "ECN-" + ecn_number
+    ecn_folder = None
+    
+    with scandir(OSIDIR.ECN_FOLDER) as dir:
+        for file in dir:
+            if file.name == ecn_name:
+                ecn_folder = Path(file.path)
+                break
+            
+    if ecn_folder == None:
+        raise FileNotFoundError(f"ECN: {ecn_name} does not have a folder in the location {OSIDIR.ECN_FOLDER}")
+    ecn_drawings = ecn_folder.joinpath("Updated Drawings")
+    
+    if not ecn_drawings.exists():
+        raise FileNotFoundError(f"Location: {ecn_folder} does not contain the following folder: Updated Drawings")
+    ecn_file = ecn_folder.joinpath(ecn_name + ".xlsx")
+    if not ecn_file.exists():
+        raise FileNotFoundError(f"Location: {ecn_folder} does not contain an excel ecn file")
+    
+    return (EcnFile(ecn_name, ecn_folder, ecn_drawings, ecn_file))
+
+@dataclass
+class EcnChange():
+    dwg_number: str
+    new_revision: str
+    disposition: str
+    status: str         # Used to keep track of if user approved / added
+
+@dataclass
+class FM00037():
+    SHEET: str              = "Bill of Materials"
+    DWGS_FIRST_COL: int     = 0  # Column A = 0
+    DWGS_LAST_COL: int      = 7  # Reference Column A = 0
+    DWGS_FIRST_ROW: int     = 4  # First row with the parent drawings in an ecn
+    REV_COL: int            = 11 # Column Containing Revision
+    DISPOSITION_COL: int    = 12 # Column Containing Disposition
+
+def read_ecn_changes(ecn: Path) -> list[EcnChange]:
+    wb = openpyxl.load_workbook(ecn, data_only=True)
+    ws = wb[FM00037.SHEET]
+    ecn_changes = list()
+    
+    for row in ws.iter_rows(min_row=FM00037.DWGS_FIRST_ROW, values_only=True):
+        
+        empty_row = True
+        for value in row[FM00037.DWGS_FIRST_COL:FM00037.DWGS_LAST_COL+1]:
+            if value != None:
+                empty_row = False
+                break
+            
+        if empty_row == False:
+            ecn_changes.append(EcnChange(value, row[FM00037.REV_COL], row[FM00037.DISPOSITION_COL], "Review"))
+
+    return ecn_changes
+    
+    

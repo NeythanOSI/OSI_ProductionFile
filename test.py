@@ -1,3 +1,4 @@
-x = "00123abc"
+from pathlib import Path
+from os import scandir, walk
 
-print(int(x))
+print(Path(r".\file_table.pickle").exists())

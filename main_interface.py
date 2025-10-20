@@ -1,11 +1,15 @@
 import ttkbootstrap as tk
 from enum import IntEnum
+from project_functions import EcnFile, EcnChange, get_ecn, read_ecn_changes
+from StandardOSILib.osi_directory import OSIDIR
+from project_data import PROJDIR, PROJDATA
+from StandardOSILib.osi_functions import osi_file_load
 
 class Root(tk.Window):
     def __init__(self):
         super().__init__(themename='darkly')
         self.title("OSI Engineering File Manager")
-        self.geometry("800x500")
+        self.geometry("1200x750")
         
         self.menubar = tk.Menu(self)
         self.config(menu=self.menubar)
@@ -19,14 +23,18 @@ class _DrawingViewTree(tk.Treeview):
     
     TREE_HEADERS = ("Product Family", "File Locations")
     
+    def populate_tree(self, entries: tuple[str]):
+        for i, entry in enumerate(entries):
+            self.insert("", 'end', iid=i, values=entry)
+    
     def __init__(self, master):
         
         # Create Product Tree
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
         self.heading(self.TREE_HEADERS[0], text="Product Family")
         self.heading(self.TREE_HEADERS[1], text="File Locations")
-        self.column(self.TREE_HEADERS[0], stretch=False, width=100, anchor='center')
-        self.column(self.TREE_HEADERS[1], stretch=False, width=500, anchor='center')
+        self.column(self.TREE_HEADERS[0], stretch=False, width=200, anchor='w')
+        self.column(self.TREE_HEADERS[1], stretch=False, width=700, anchor='w')
         
 class ActionWindow(tk.Frame):
     
@@ -82,6 +90,17 @@ class _EcnTree(tk.Treeview):
     
     TREE_HEADERS = ("Drawing Number", "New Revision", "Disposition", "Status")
     
+    def populate_tree(self, entries: tuple[str]):
+        for i, entry in enumerate(entries):
+            self.insert("", 'end', iid=i, values=entry)
+            
+    def return_selection(self, position):
+        # Try Statement blocks errors if nothing is selected
+        try:
+            return int(self.focus())
+        except ValueError:
+            return None
+    
     def __init__(self, master):
         # Create Tree
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
@@ -89,10 +108,12 @@ class _EcnTree(tk.Treeview):
         self.heading(self.TREE_HEADERS[1], text="New Revision")
         self.heading(self.TREE_HEADERS[2], text="Disposition")
         self.heading(self.TREE_HEADERS[3], text="Status")
-        self.column(self.TREE_HEADERS[0], stretch=False, width=120, anchor='center')
-        self.column(self.TREE_HEADERS[1], stretch=False, width=100, anchor='center')
-        self.column(self.TREE_HEADERS[2], stretch=False, width=100, anchor='center')
-        self.column(self.TREE_HEADERS[3], stretch=False, width=100, anchor='center')
+        self.column(self.TREE_HEADERS[0], stretch=False, width=150, anchor='w')
+        self.column(self.TREE_HEADERS[1], stretch=False, width=150, anchor='c')
+        self.column(self.TREE_HEADERS[2], stretch=False, width=150, anchor='w')
+        self.column(self.TREE_HEADERS[3], stretch=False, width=150, anchor='w')
+        
+        self.bind('<<TreeviewSelect>>', self.return_selection)
 
 class _EcnPanel(tk.Frame):
     def __init__(self, master, ecn_functions):
@@ -114,18 +135,32 @@ class _EcnPanel(tk.Frame):
         cmd_cancel_button = tk.Button(master=self, text="Cancel", width = 20, command=ecn_functions[4])
         cmd_cancel_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
         
+class _EcnFrame(tk.Frame):
+    def __init__(self, master):
+        tk.Frame.__init__(self, master)
+        # Widgets
+        self.ecn_tree = _EcnTree(self.active_frame)
+        self.ecn_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
+        self.ecn_panel = _EcnPanel(self.active_frame, ECN_PANEL_FUNCTIONS)
+        self.ecn_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        
 class ProductionFileFrame(tk.Frame):
     
     def _clear_window(self):
         for widget in self.winfo_children():
             widget.destroy()
             
+    def _clear_data(self):
+        self.ecn_changes = None
+        self.ecn_file = None
+            
     def _launch_action_window(self):
         self._clear_window()
-        self.active_frame = ActionWindow(self, self._launch_drawing_view_action, self._launch_ecn_window)
+        self._clear_data()
+        self.active_frame = ActionWindow(self, self._launch_drawing_view_action, self._launch_ecn_window_instance)
         self.active_frame.pack(side="top",padx=5, pady=5)
-            
-    def _launch_drawing_view(self, command):
+    
+    def _launch_drawing_view(self, drawing, command):
         self._clear_window()
         self.active_frame = tk.Frame(self)
         self.active_frame.pack(side="top", padx=5, pady=5)
@@ -136,23 +171,40 @@ class ProductionFileFrame(tk.Frame):
         # Button to Return
         cmd_return_button = tk.Button(self.active_frame, text="Done", command=command)
         cmd_return_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
-    def _launch_drawing_view_action(self):
-        self._launch_drawing_view(command=self._launch_action_window)
-    def _launch_drawing_view_ecn(self):
-        self._launch_drawing_view(command=self._launch_ecn_window)
+        
+        # Populate Tree with Drawing Locations
+        entries = list()
+        for entry in self.build_table[drawing]:
+            entries.append((None, entry))
+        drawing_view_frame.populate_tree(entries)
+    def _launch_drawing_view_action(self):  # Launches from the main window
+        dwg_number = self.active_frame.cmd_viewdrawing_var.get()
+        self._launch_drawing_view(drawing = dwg_number, command=self._launch_action_window)
+    def _launch_drawing_view_ecn(self):     # Launches from the ecn window
+        self._launch_drawing_view(drawing = None, command=self._launch_ecn_window_return)
     
-    def _launch_ecn_window(self):
+    def _launch_ecn_window_instance(self):
+        """Use this function when launching a brand new instance of the ECN Window"""
+        ecn_number = self.active_frame.cmd_uploadecn_var.get()
+        self.ecn_file = get_ecn(ecn_number)
+        self.ecn_changes = read_ecn_changes(self.ecn_file.ecn_file)
+        self._launch_ecn_window_return()
+        
+    def _launch_ecn_window_return(self):
+        """This function returns to the current instance of the ECN Window"""
+        # Get Variables from the Action Window
+        
         self._clear_window()
         self.active_frame = tk.Frame(self)
         self.active_frame.pack(side="top", padx=5, pady=5)
         
         # Functions
         ECN_PANEL_FUNCTIONS = (
-            None,
-            self._launch_drawing_view_ecn,
-            self._launch_file_window,
-            self._launch_action_window,
-            self._launch_action_window
+            None,                           # Approve Button   
+            self._launch_drawing_view_ecn,  # See Location of Files Button
+            self._launch_file_window,       # Set new File Locations Button
+            self._launch_action_window,     # Apply Button
+            self._launch_action_window      # Cancel Button
         )
         
         # Widgets
@@ -160,21 +212,33 @@ class ProductionFileFrame(tk.Frame):
         self.ecn_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
         self.ecn_panel = _EcnPanel(self.active_frame, ECN_PANEL_FUNCTIONS)
         self.ecn_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        
+        # Populate Tree
+        ecn_change_list = list()
+        for change in self.ecn_changes:
+            ecn_change_list.append((change.dwg_number, change.new_revision, change.disposition, change.status))
+        self.ecn_tree.populate_tree(ecn_change_list)
     
     def _launch_file_window(self):
+        """Window that allows naviation through the production files, and adds new files where they belong"""
         self._clear_window()
         self.active_frame = tk.Frame(self)
         self.active_frame.pack(side="top", padx=5, pady=5)
         
         # Widgets
-        self.file_tree = _FileTree(self.active_frame)
-        self.file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
-        self.file_panel = _FilePanel(self.active_frame, self._launch_ecn_window)
-        self.file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        file_tree = _FileTree(self.active_frame)
+        file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
+        file_panel = _FilePanel(self.active_frame, self._launch_ecn_window_return)
+        file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
     
     def __init__(self, master):
         tk.Frame.__init__(self, master=master)
         self._launch_action_window()
+        
+        # Globals
+        self.build_table = osi_file_load(PROJDATA.FILE_TABLE)
+        self.ecn_file = None
+        self.ecn_changes = None
         
 if __name__ == '__main__':
     root = Root()
