@@ -30,7 +30,8 @@ def get_dwg_number_rev(file: Path|WindowsPath|PosixPath) -> tuple[str|None]:
     except AttributeError:
         return None
     rev_unparsed = re.sub(PART_NUM_REGEX, "", name)
-    rev = rev_unparsed[1:]
+    rev_start = rev_unparsed.rfind("-")
+    rev = rev_unparsed[rev_start+1:]
     return dwg, rev
 
 def get_drawings(Folder: Path|WindowsPath|PosixPath) -> dict[str, list[str]]:
@@ -49,7 +50,7 @@ def get_drawings(Folder: Path|WindowsPath|PosixPath) -> dict[str, list[str]]:
         for file in files:
             if file == "":                            # Check for directory with no files
                 continue
-            dwg_number_rev = get_dwg_number_rev(Path(file))  
+            dwg_number_rev = get_dwg_number_rev(Path(file))
             if dwg_number_rev is None:                       # Check for valid drawing number
                 continue
             dwg_number = dwg_number_rev[0]
@@ -111,6 +112,7 @@ def get_ecn(ecn_number: str) -> EcnFile:
 
 @dataclass
 class EcnChange():
+    level: int
     dwg_number: str
     new_revision: str
     disposition: str
@@ -128,18 +130,24 @@ class FM00037():
 def read_ecn_changes(ecn: Path) -> list[EcnChange]:
     wb = openpyxl.load_workbook(ecn, data_only=True)
     ws = wb[FM00037.SHEET]
-    ecn_changes = list()
+    ecn_changes: list[EcnChange] = list()
     
     for row in ws.iter_rows(min_row=FM00037.DWGS_FIRST_ROW, values_only=True):
-        
+
         empty_row = True
-        for value in row[FM00037.DWGS_FIRST_COL:FM00037.DWGS_LAST_COL+1]:
-            if value != None:
+        for i, value in enumerate(row[FM00037.DWGS_FIRST_COL:FM00037.DWGS_LAST_COL+1]):
+            if value == None or value == "":
+                continue
+            else:
                 empty_row = False
                 break
             
-        if empty_row == False:
-            ecn_changes.append(EcnChange(value, row[FM00037.REV_COL], row[FM00037.DISPOSITION_COL], "Review"))
+        if empty_row == True:
+            continue
+        if row[FM00037.DISPOSITION_COL] == "Old Product":
+            continue
+        
+        ecn_changes.append(EcnChange(i, value, row[FM00037.REV_COL].lstrip("-"), row[FM00037.DISPOSITION_COL], "Review"))
 
     return ecn_changes
     

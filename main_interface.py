@@ -1,9 +1,11 @@
 import ttkbootstrap as tk
 from enum import IntEnum
-from project_functions import EcnFile, EcnChange, get_ecn, read_ecn_changes
+from project_functions import EcnFile, get_ecn, read_ecn_changes, EcnChange
 from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load
+from os import scandir
+from pathlib import Path
 
 class Root(tk.Window):
     def __init__(self):
@@ -31,8 +33,8 @@ class _DrawingViewTree(tk.Treeview):
         
         # Create Product Tree
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
-        self.heading(self.TREE_HEADERS[0], text="Product Family")
-        self.heading(self.TREE_HEADERS[1], text="File Locations")
+        self.heading(self.TREE_HEADERS[0], text="Product Family", anchor='w')
+        self.heading(self.TREE_HEADERS[1], text="File Locations", anchor='w')
         self.column(self.TREE_HEADERS[0], stretch=False, width=200, anchor='w')
         self.column(self.TREE_HEADERS[1], stretch=False, width=700, anchor='w')
         
@@ -40,42 +42,11 @@ class _FileTree(tk.Treeview):
     
     TREE_HEADERS = ("File Type", "File Name")
     
-    def __init__(self, master):
-        # Create Tree
-        tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
-        self.heading(self.TREE_HEADERS[0], text="File Type")
-        self.heading(self.TREE_HEADERS[1], text="File Name")
-        self.column(self.TREE_HEADERS[0], stretch=False, width=200, anchor='center')
-        self.column(self.TREE_HEADERS[1], stretch=False, width=200, anchor='center')
-        
-class _FilePanel(tk.Frame):
-    def __init__(self, master, cmd_return):
-        tk.Frame.__init__(self, master)
-        # Button Insert Above
-        cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 20, command=None)
-        cmd_iabove_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
-        # Button Insert Below
-        cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 20, command=None)
-        cmd_ibelow_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
-        # Enter Folder
-        cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=20, command=None)
-        cmd_enterfol_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
-        # Open PDF
-        cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=20, command=None)
-        cmd_openpdf_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
-        # Done
-        cmd_done_button = tk.Button(master=self, text="Done", width=20, command=cmd_return)
-        cmd_done_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
-        
-class _EcnTree(tk.Treeview):
-    
-    TREE_HEADERS = ("Drawing Number", "New Revision", "Disposition", "Status")
-    
     def populate_tree(self, entries: tuple[str]):
         for i, entry in enumerate(entries):
             self.insert("", 'end', iid=i, values=entry)
-            
-    def return_selection(self, position):
+    
+    def return_selection(self):
         # Try Statement blocks errors if nothing is selected
         try:
             return int(self.focus())
@@ -85,16 +56,62 @@ class _EcnTree(tk.Treeview):
     def __init__(self, master):
         # Create Tree
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
-        self.heading(self.TREE_HEADERS[0], text="Drawing Number")
-        self.heading(self.TREE_HEADERS[1], text="New Revision")
-        self.heading(self.TREE_HEADERS[2], text="Disposition")
-        self.heading(self.TREE_HEADERS[3], text="Status")
-        self.column(self.TREE_HEADERS[0], stretch=False, width=150, anchor='w')
-        self.column(self.TREE_HEADERS[1], stretch=False, width=150, anchor='c')
-        self.column(self.TREE_HEADERS[2], stretch=False, width=150, anchor='w')
-        self.column(self.TREE_HEADERS[3], stretch=False, width=150, anchor='w')
+        self.heading(self.TREE_HEADERS[0], text="File Type", anchor='center')
+        self.heading(self.TREE_HEADERS[1], text="File Name", anchor='w')
+        self.column(self.TREE_HEADERS[0], stretch=False, width=200, anchor='center')
+        self.column(self.TREE_HEADERS[1], stretch=False, width=200, anchor='w')
         
-        self.bind('<<TreeviewSelect>>', self.return_selection)
+class _FilePanel(tk.Frame):
+    
+    def __init__(self, master, file_functions):
+        tk.Frame.__init__(self, master)
+        # Button Insert Above
+        cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 20, command=file_functions[0])
+        cmd_iabove_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        # Button Insert Below
+        cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 20, command=file_functions[1])
+        cmd_ibelow_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
+        # Enter Folder
+        cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=20, command=file_functions[2])
+        cmd_enterfol_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
+        # Previous Folder
+        cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=20, command=file_functions[3])
+        cmd_prevfol_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
+        # Open PDF
+        cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=20, command=file_functions[4])
+        cmd_openpdf_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
+        # Done
+        cmd_done_button = tk.Button(master=self, text="Done", width=20, command=file_functions[5])
+        cmd_done_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
+        
+class _EcnTree(tk.Treeview):
+    
+    TREE_HEADERS = ("Level", "Drawing Number", "New Revision", "Disposition", "Status")
+    
+    def populate_tree(self, entries: list[tuple[str]]):
+        for i, entry in enumerate(entries):
+            self.insert("", 'end', iid=i, values=entry)
+            
+    def return_selection(self):
+        # Try Statement blocks errors if nothing is selected
+        try:
+            return int(self.focus())
+        except ValueError:
+            return None
+    
+    def __init__(self, master):
+        # Create Tree
+        tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
+        self.heading(self.TREE_HEADERS[0], text="Level", anchor='center')
+        self.heading(self.TREE_HEADERS[1], text="Drawing Number", anchor='w')
+        self.heading(self.TREE_HEADERS[2], text="New Revision", anchor='center')
+        self.heading(self.TREE_HEADERS[3], text="Disposition", anchor='w')
+        self.heading(self.TREE_HEADERS[4], text="Status", anchor='w')
+        self.column(self.TREE_HEADERS[0], stretch=False, width=60, anchor='center')
+        self.column(self.TREE_HEADERS[1], stretch=False, width=120, anchor='w')
+        self.column(self.TREE_HEADERS[2], stretch=False, width=120, anchor='center')
+        self.column(self.TREE_HEADERS[3], stretch=False, width=150, anchor='w')
+        self.column(self.TREE_HEADERS[4], stretch=False, width=150, anchor='w')
 
 class _EcnPanel(tk.Frame):
     def __init__(self, master, ecn_functions):
@@ -157,28 +174,114 @@ class _DrawingViewWindow(tk.Frame):
         drawing_view_frame.populate_tree(entries)
 
 class _FileWindow(tk.Frame):
+    
+    def _serialize_up(self):
+        pass
+    
+    def _insert_file(self):
+        pass
+    
+    def _insert_above(self):
+        pass
+    
+    def _insert_below(self):
+        pass
+    
+    def _scan_folder(self):
+        self.folder_childs.clear()
+        with scandir(self.root) as dir:
+            for file in dir:
+                file_path = Path(file.path)
+                file_name = file_path.stem
+                file_type = file_path.suffix
+                if file_type == "":
+                    file_type = "Folder"
+                self.folder_childs.append((file_type, file_name))
+        self.file_tree.populate_tree(self.folder_childs)
+    
+    def _enter_folder(self):
+        pass
+    
+    def _prev_folder(self):
+        pass
+    
+    def _open_pdf(self):
+        pass
+    
     def __init__(self, master, return_cmd):
         tk.Frame.__init__(self, master)
+        self.root = PROJDIR.WORKING
+        self.ecn_file = None
+        self.folder_childs = list()
+
+        FILE_PANEL_FUNCTIONS = (
+            self._insert_above,     # Insert Above
+            self._insert_below,     # Insert Below
+            self._enter_folder,     # Enter Folder
+            self._prev_folder,      # Previous Folder
+            self._open_pdf,         # Open PDF
+            return_cmd,             # Done / Return Command
+        )
 
         # Widgets
-        file_tree = _FileTree(self)
-        file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
-        file_panel = _FilePanel(self, return_cmd)
+        self.file_tree = _FileTree(self)
+        self.file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
+        file_panel = _FilePanel(self, FILE_PANEL_FUNCTIONS)
         file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        
+        self._scan_folder()
 
 class _EcnWindow(tk.Frame):
+    
+    def _clear_window(self):
+        for widget in self.winfo_children():
+            widget.destroy()
     
     def populate_tree(self):
         # Populate Tree
         ecn_change_list = list()
         for change in self.ecn_changes:
-            ecn_change_list.append((change.dwg_number, change.new_revision, change.disposition, change.status))
+            ecn_change_list.append(
+                (
+                    change.level,
+                    change.dwg_number,
+                    change.new_revision,
+                    change.disposition,
+                    change.status
+                ))
         self.ecn_tree.populate_tree(ecn_change_list)
     
-    def __init__(self, master, ecn_number, return_cmd):
+    def _launch_action_window(self):
+        self._clear_window()
+        self.ecn_tree = _EcnTree(self)
+        self.ecn_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
+        self.ecn_panel = _EcnPanel(self, self.ECN_PANEL_FUNCTIONS)
+        self.ecn_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        self.populate_tree()
+        
+    def _launch_dwg_view_window(self):
+        selection = self.ecn_tree.return_selection()
+        if selection == None:
+            return
+        self._clear_window()
+        dwg_number = self.ecn_changes[selection].dwg_number
+        window = _DrawingViewWindow(self, self.build_table, dwg_number, self._launch_action_window)
+        window.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        
+    def _launch_file_window(self):
+        selection = self.ecn_tree.return_selection()
+        if selection == None:
+            return
+        self._clear_window()
+        #ecn_file = self.ecn_changes[selection].
+        window = _FileWindow(self, self._launch_action_window)
+        window.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+    
+    def __init__(self, master, build_table, ecn_number, return_cmd):
         tk.Frame.__init__(self, master)
         
         # Create Data
+        self.build_table = build_table
         try:
             self.ecn_file = get_ecn(ecn_number)
             self.ecn_changes = read_ecn_changes(self.ecn_file.ecn_file)
@@ -187,21 +290,15 @@ class _EcnWindow(tk.Frame):
             self.ecn_changes = list()
         
         # Panel Functions
-        ECN_PANEL_FUNCTIONS = (
-            None,           # Approve Button
-            None,           # See Locations of Files Button
-            None,           # Set new File Locations Button
-            None,           # Apply Button
-            return_cmd,     # Cancel Button
+        self.ECN_PANEL_FUNCTIONS = (
+            None,                           # Approve Button
+            self._launch_dwg_view_window,   # See Locations of Files Button
+            self._launch_file_window,       # Set new File Locations Button
+            None,                           # Apply Button
+            return_cmd,                     # Cancel Button
         )
         
-        # Create Widgets
-        self.ecn_tree = _EcnTree(self)
-        self.ecn_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
-        self.ecn_panel = _EcnPanel(self, ECN_PANEL_FUNCTIONS)
-        self.ecn_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
-        
-        self.populate_tree()
+        self._launch_action_window()
         
 class ProductionFileFrame(tk.Frame):
     
@@ -223,7 +320,7 @@ class ProductionFileFrame(tk.Frame):
     def _launch_ecn_window(self):
         ecn_number = self.active_frame.cmd_uploadecn_var.get()
         self._clear_window()
-        self.active_frame = _EcnWindow(self, ecn_number, self._launch_action_window)
+        self.active_frame = _EcnWindow(self, self.build_table, ecn_number, self._launch_action_window)
         self.active_frame.pack(side="top", padx=5, pady=5)
     
     def _launch_file_window(self):
