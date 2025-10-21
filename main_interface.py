@@ -313,19 +313,24 @@ class _FileWindow(tk.Frame):
         
     def _delete_file(self):
         
-        # Add a check for folders
+        if self._check_directory():
+            return
         
         selection = self.file_tree.return_selection()
         file_path: Path = self.folder_paths[selection]
         dwg_number, dwg_rev = get_dwg_number_rev(file_path)
-        drawing = dwg_number + '-' + dwg_rev
-    
-        # Do not let user delete non-ecn drawings # Currently Working in this part
+        
+        if dwg_number != self.ecn_change.dwg_number:
+            return
+        if dwg_rev != self.ecn_change.new_revision:
+            return
         
         self._serialize_files(False, -1)    # Lower Serial Nunbers after selected file by 1
         index = self.build_table[dwg_number].index(file_path)   # Remove entry from build table
         self.build_table[dwg_number].pop(index)
         file_path.unlink()
+        
+        self._scan_folder()
     
     def _scan_folder(self):
         self.file_tree.clear_tree()
@@ -348,10 +353,9 @@ class _FileWindow(tk.Frame):
     
     def _enter_folder(self):
         selection = self.file_tree.return_selection()
-        if not self.folder_paths[selection].is_dir():
+        if not self._check_directory():
             return
         self.root = self.folder_paths[selection]
-        
         self._scan_folder()
     
     def _prev_folder(self):
