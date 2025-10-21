@@ -1,11 +1,20 @@
 import ttkbootstrap as tk
 from enum import IntEnum
-from project_functions import EcnFile, get_ecn, read_ecn_changes, EcnChange
+from project_functions import EcnFile, get_ecn, read_ecn_changes, EcnChange, get_drawings, get_dwg_number_rev
 from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
-from StandardOSILib.osi_functions import osi_file_load
+from StandardOSILib.osi_functions import osi_file_load, osi_file_store
+from shutil import copy
 from os import scandir
+import webbrowser
 from pathlib import Path
+from dataclasses import dataclass
+
+@dataclass
+class OsiFile():
+    file_path: Path
+    file_name: str
+    file_type: str
 
 class Root(tk.Window):
     def __init__(self):
@@ -42,6 +51,10 @@ class _FileTree(tk.Treeview):
     
     TREE_HEADERS = ("File Type", "File Name")
     
+    def clear_tree(self):
+        for i, child in enumerate(self.get_children()):
+            self.delete(i)
+    
     def populate_tree(self, entries: tuple[str]):
         for i, entry in enumerate(entries):
             self.insert("", 'end', iid=i, values=entry)
@@ -58,8 +71,8 @@ class _FileTree(tk.Treeview):
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
         self.heading(self.TREE_HEADERS[0], text="File Type", anchor='center')
         self.heading(self.TREE_HEADERS[1], text="File Name", anchor='w')
-        self.column(self.TREE_HEADERS[0], stretch=False, width=200, anchor='center')
-        self.column(self.TREE_HEADERS[1], stretch=False, width=200, anchor='w')
+        self.column(self.TREE_HEADERS[0], stretch=False, width=100, anchor='center')
+        self.column(self.TREE_HEADERS[1], stretch=False, width=300, anchor='w')
         
 class _FilePanel(tk.Frame):
     
@@ -71,18 +84,21 @@ class _FilePanel(tk.Frame):
         # Button Insert Below
         cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 20, command=file_functions[1])
         cmd_ibelow_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
+        # Button Delete
+        cmd_delete_button = tk.Button(master=self, text="Delete File", width = 20, command=file_functions[2])
+        cmd_delete_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
         # Enter Folder
-        cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=20, command=file_functions[2])
-        cmd_enterfol_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=20, command=file_functions[3])
+        cmd_enterfol_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
         # Previous Folder
-        cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=20, command=file_functions[3])
-        cmd_prevfol_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=20, command=file_functions[4])
+        cmd_prevfol_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
         # Open PDF
-        cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=20, command=file_functions[4])
-        cmd_openpdf_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=20, command=file_functions[5])
+        cmd_openpdf_button.grid(row=5, column=0, padx=5, pady=5, sticky='nswe')
         # Done
-        cmd_done_button = tk.Button(master=self, text="Done", width=20, command=file_functions[5])
-        cmd_done_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_done_button = tk.Button(master=self, text="Done", width=20, command=file_functions[6])
+        cmd_done_button.grid(row=6, column=0, padx=5, pady=5, sticky='nswe')
         
 class _EcnTree(tk.Treeview):
     
@@ -175,48 +191,139 @@ class _DrawingViewWindow(tk.Frame):
 
 class _FileWindow(tk.Frame):
     
-    def _serialize_up(self):
-        pass
+    def _update_index(self, file_name: str, change: int) -> str:
+        drawing = file_name[3:]
+        index = str(int(file_name[:3]) + change)
+        
+        for i in range(3 - index.__len__()):
+            index = str(0) + index
+            
+        return index + drawing
     
-    def _insert_file(self):
-        pass
+    def _write_new_index(self, file: Path, change: int):
+        file_name = file.name
+        file_path = file.parent
+        dwg_number = get_dwg_number_rev(file)[0]
+        
+        file_new = self._update_index(file_name, change)
+        file_new_path = file_path.joinpath(file_new)
+        file.rename(file_new_path)
+        
+        build_table_paths: list[Path] = self.build_table[dwg_number]
+        build_table_ind = build_table_paths.index(file)
+        build_table_paths[build_table_ind] = file_new_path  # Updates Build Table by Reference
+    
+    def _serialize_files(self, inc_selection: bool, change: int):
+        
+        for path in self.folder_paths:  # Verify only PDF's are in root
+            if path.is_dir():
+                return
+        
+        selection = self.file_tree.return_selection()
+        for i in range(selection, self.folder_childs.__len__()):
+            if not inc_selection:       # Skip first iteration to avoid updating selected file
+                inc_selection = True    # Stops this section from looping
+                continue
+            self._write_new_index(self.folder_paths[i], change)
+        
+        self._scan_folder()     # Update
+
+    def _insert_file(self, index: str):
+        drawing = Path(copy(src=self.drawing, dst=self.root))
+        drawing_name = drawing.name
+        drawing_parent = drawing.parent
+        
+        new_name = index + drawing_name
+        new_path = drawing_parent.joinpath(new_name)
+        drawing = drawing.rename(new_path)
+        
+        dwg_number = get_dwg_number_rev(drawing)[0]
+        if dwg_number in self.build_table.keys():
+            self.build_table[dwg_number].append(drawing)
+        else:
+            self.build_table[dwg_number] = [drawing]        
+        self._scan_folder()
     
     def _insert_above(self):
-        pass
+        selection = self.file_tree.return_selection()
+        file_index: str = self.folder_paths[selection].stem[:4]
+        self._serialize_files(True, 1)
+        self._insert_file(file_index)
     
     def _insert_below(self):
-        pass
+        selection = self.file_tree.return_selection()
+        file_name = self.folder_childs[selection][1]        # Use selection index to avoid risk of going out of bounds
+        file_index = self._update_index(file_name, 1)[:4]   # Add +1 to the selection index to account for inserting below
+        self._serialize_files(False, 1)
+        self._insert_file(file_index)             
+    
+    def _delete_file(self):
+        selection = self.file_tree.return_selection()
+        file_path: Path = self.folder_paths[selection]
+        dwg_number, dwg_rev = get_dwg_number_rev(file_path)
+        drawing = dwg_number + '-' + dwg_rev
+        
+        
+        print(self.drawing)
+        print(drawing)
+        if self.drawing != drawing: # Do not let user delete non-ecn drawings
+            return
+        
+        self._serialize_files(False, -1)    # Lower Serial Nunbers after selected file by 1
+        index = self.build_table[dwg_number].index(file_path)   # Remove entry from build table
+        self.build_table[dwg_number].pop(index)
+        file_path.unlink()
     
     def _scan_folder(self):
+        self.file_tree.clear_tree()
         self.folder_childs.clear()
+        self.folder_paths.clear()
         with scandir(self.root) as dir:
+            folder_dict = dict()
             for file in dir:
                 file_path = Path(file.path)
                 file_name = file_path.stem
                 file_type = file_path.suffix
                 if file_type == "":
                     file_type = "Folder"
-                self.folder_childs.append((file_type, file_name))
+                folder_dict[file_name] = (file_path, file_name, file_type)
+            sorted_keys = sorted(folder_dict.keys())
+            for key in sorted_keys:
+                self.folder_childs.append((folder_dict[key][2], folder_dict[key][1]))
+                self.folder_paths.append(folder_dict[key][0])
         self.file_tree.populate_tree(self.folder_childs)
     
     def _enter_folder(self):
-        pass
+        selection = self.file_tree.return_selection()
+        if not self.folder_paths[selection].is_dir():
+            return
+        self.root = self.folder_paths[selection]
+        
+        self._scan_folder()   
     
     def _prev_folder(self):
-        pass
+        if self.root == PROJDIR.WORKING:    # don't let user out of the scope of the program
+            return
+        self.root = self.root.parent
+        self._scan_folder()
     
     def _open_pdf(self):
-        pass
+        file = self.folder_paths[self.file_tree.return_selection()]
+        if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
+            webbrowser.open_new(file)
     
-    def __init__(self, master, return_cmd):
+    def __init__(self, master, build_table, drawing: Path, return_cmd):
         tk.Frame.__init__(self, master)
         self.root = PROJDIR.WORKING
-        self.ecn_file = None
-        self.folder_childs = list()
+        self.drawing = drawing
+        self.build_table = build_table
+        self.folder_childs: list[tuple[str]] = list()
+        self.folder_paths: list[Path] = list()
 
         FILE_PANEL_FUNCTIONS = (
             self._insert_above,     # Insert Above
             self._insert_below,     # Insert Below
+            self._delete_file,      # Delete File
             self._enter_folder,     # Enter Folder
             self._prev_folder,      # Previous Folder
             self._open_pdf,         # Open PDF
@@ -270,11 +377,19 @@ class _EcnWindow(tk.Frame):
         
     def _launch_file_window(self):
         selection = self.ecn_tree.return_selection()
+        ecn_drawings = self.ecn_file.ecn_drawings
+        dwg_number = self.ecn_changes[selection].dwg_number
+        new_revision = self.ecn_changes[selection].new_revision
+        
+        dwg_pdf = ecn_drawings.joinpath(dwg_number + '-' + new_revision + '.pdf')
+        if not dwg_pdf.exists():
+            raise FileNotFoundError(f"file {dwg_pdf.stem} not found in the updated drawings folder for {self.ecn_file.ecn_name}")
+        
         if selection == None:
             return
         self._clear_window()
-        #ecn_file = self.ecn_changes[selection].
-        window = _FileWindow(self, self._launch_action_window)
+        
+        window = _FileWindow(self, self.build_table, dwg_pdf, self._launch_action_window)
         window.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
     
     def __init__(self, master, build_table, ecn_number, return_cmd):
@@ -334,7 +449,12 @@ class ProductionFileFrame(tk.Frame):
         self._launch_action_window()
         
         # Globals
-        self.build_table = osi_file_load(PROJDATA.FILE_TABLE)
+        
+        # Figure out how to thread the build table for better performance at a later date
+        self.build_table: dict[str, list[Path]] = get_drawings(PROJDIR.WORKING)
+        osi_file_store(self.build_table, PROJDATA.FILE_TABLE)
+        for key in self.build_table.keys():
+            print(f"{key} : {self.build_table[key]}")
         
 if __name__ == '__main__':
     root = Root()
