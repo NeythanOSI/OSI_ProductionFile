@@ -191,6 +191,35 @@ class _DrawingViewWindow(tk.Frame):
 
 class _FileWindow(tk.Frame):
     
+    def _check_directory(self) -> bool:
+        """Error Checking Function: Verify that root folder contains only folders
+
+        Returns:
+            bool: Returns True if folder contains only directories, Returns False if files are present
+        """
+        for path in self.folder_paths:
+            if path.is_dir():
+                continue
+            else:
+                return False
+        return True
+
+    def _error_check_insert(self, file_path: Path) -> int:
+        """Checks errors before performing and data altering insert drawing functions
+
+        Returns:
+            int: Returns 1 if the drawing file to copy does not exist\n
+            Returns 2 if the root folder is a directory\n
+            Returns 0 if successful \n
+        """
+        if not file_path.exists():
+            print(FileNotFoundError(f"source file {file_path} to copy to production drive does not exist"))
+            return 1
+        if self._check_directory():
+            print(TypeError(f"cannot insert drawing pdf in directory folder"))
+            return 2
+        return 0
+    
     def _update_index(self, file_name: str, change: int) -> str:
         drawing = file_name[3:]
         index = str(int(file_name[:3]) + change)
@@ -215,9 +244,8 @@ class _FileWindow(tk.Frame):
     
     def _serialize_files(self, inc_selection: bool, change: int):
         
-        for path in self.folder_paths:  # Verify only PDF's are in root
-            if path.is_dir():
-                return
+        if self._check_directory():
+            return
         
         selection = self.file_tree.return_selection()
         for i in range(selection, self.folder_childs.__len__()):
@@ -228,14 +256,17 @@ class _FileWindow(tk.Frame):
         
         self._scan_folder()     # Update
         
-    def _get_pdf_drawing(self) -> Path|int:  # Error Function
+    def _get_pdf_drawing(self) -> Path:
+        """Returns the source path for the new drawing released/updated with the ecn
+
+        Returns:
+            Path|int: Path object pointing to an updated/new drawing in the ECN folder's updated drawings folder.
+            It is recomend to check the file exists after using this function
+        """
         ecn_drawings = self.ecn_file.ecn_drawings
         dwg_number = self.ecn_change.dwg_number
         dwg_rev = self.ecn_change.new_revision
         drawing_src = ecn_drawings.joinpath(dwg_number + '-' + dwg_rev + '.pdf')
-        print(drawing_src)
-        if not drawing_src.exists():
-            return 1
         return drawing_src
 
     def _insert_file(self, drawing_src: Path, index: str):
@@ -257,30 +288,29 @@ class _FileWindow(tk.Frame):
     
     def _insert_above(self):
         
-        # Add a check for directory
-        
         selection = self.file_tree.return_selection()
         file_index: str = self.folder_paths[selection].stem[:4]
-        drawing_src = self._get_pdf_drawing()           # verify drawings is in ECN folder
-        if drawing_src == 1:
-            raise FileNotFoundError(f"file {self.ecn_change.dwg_number} not found in "
-                                    "the updated drawings folder for {self.ecn_file.ecn_name}")
+        drawing_src = self._get_pdf_drawing()
+        
+        if self._error_check_insert(drawing_src) != 0:
+            return
+
         self._serialize_files(True, 1)
         self._insert_file(drawing_src, file_index)
     
     def _insert_below(self):
         
-        # Add a check for directory
-        
         selection = self.file_tree.return_selection()
         file_name = self.folder_childs[selection][1]        # Use selection index to avoid risk of going out of bounds
         file_index = self._update_index(file_name, 1)[:4]   # Add +1 to the selection index to account for inserting below
         drawing_src = self._get_pdf_drawing()               # verify drawings is in ECN folder
-        if drawing_src == 1:
-            raise FileNotFoundError(f"file {self.ecn_change.dwg_number} not found in the updated drawings folder for {self.ecn_file.ecn_name}")
+        
+        if self._error_check_insert(drawing_src) != 0:
+            return
+        
         self._serialize_files(False, 1)
-        self._insert_file(drawing_src, file_index)             
-    
+        self._insert_file(drawing_src, file_index)
+        
     def _delete_file(self):
         
         # Add a check for folders
