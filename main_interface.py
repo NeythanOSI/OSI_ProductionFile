@@ -227,9 +227,20 @@ class _FileWindow(tk.Frame):
             self._write_new_index(self.folder_paths[i], change)
         
         self._scan_folder()     # Update
+        
+    def _get_pdf_drawing(self) -> Path|int:  # Error Function
+        ecn_drawings = self.ecn_file.ecn_drawings
+        dwg_number = self.ecn_change.dwg_number
+        dwg_rev = self.ecn_change.new_revision
+        drawing_src = ecn_drawings.joinpath(dwg_number + '-' + dwg_rev + '.pdf')
+        print(drawing_src)
+        if not drawing_src.exists():
+            return 1
+        return drawing_src
 
-    def _insert_file(self, index: str):
-        drawing = Path(copy(src=self.drawing, dst=self.root))
+    def _insert_file(self, drawing_src: Path, index: str):
+        
+        drawing = Path(copy(src=drawing_src, dst=self.root))
         drawing_name = drawing.name
         drawing_parent = drawing.parent
         
@@ -245,29 +256,41 @@ class _FileWindow(tk.Frame):
         self._scan_folder()
     
     def _insert_above(self):
+        
+        # Add a check for directory
+        
         selection = self.file_tree.return_selection()
         file_index: str = self.folder_paths[selection].stem[:4]
+        drawing_src = self._get_pdf_drawing()           # verify drawings is in ECN folder
+        if drawing_src == 1:
+            raise FileNotFoundError(f"file {self.ecn_change.dwg_number} not found in "
+                                    "the updated drawings folder for {self.ecn_file.ecn_name}")
         self._serialize_files(True, 1)
-        self._insert_file(file_index)
+        self._insert_file(drawing_src, file_index)
     
     def _insert_below(self):
+        
+        # Add a check for directory
+        
         selection = self.file_tree.return_selection()
         file_name = self.folder_childs[selection][1]        # Use selection index to avoid risk of going out of bounds
         file_index = self._update_index(file_name, 1)[:4]   # Add +1 to the selection index to account for inserting below
+        drawing_src = self._get_pdf_drawing()               # verify drawings is in ECN folder
+        if drawing_src == 1:
+            raise FileNotFoundError(f"file {self.ecn_change.dwg_number} not found in the updated drawings folder for {self.ecn_file.ecn_name}")
         self._serialize_files(False, 1)
-        self._insert_file(file_index)             
+        self._insert_file(drawing_src, file_index)             
     
     def _delete_file(self):
+        
+        # Add a check for folders
+        
         selection = self.file_tree.return_selection()
         file_path: Path = self.folder_paths[selection]
         dwg_number, dwg_rev = get_dwg_number_rev(file_path)
         drawing = dwg_number + '-' + dwg_rev
-        
-        
-        print(self.drawing)
-        print(drawing)
-        if self.drawing != drawing: # Do not let user delete non-ecn drawings
-            return
+    
+        # Do not let user delete non-ecn drawings # Currently Working in this part
         
         self._serialize_files(False, -1)    # Lower Serial Nunbers after selected file by 1
         index = self.build_table[dwg_number].index(file_path)   # Remove entry from build table
@@ -299,7 +322,7 @@ class _FileWindow(tk.Frame):
             return
         self.root = self.folder_paths[selection]
         
-        self._scan_folder()   
+        self._scan_folder()
     
     def _prev_folder(self):
         if self.root == PROJDIR.WORKING:    # don't let user out of the scope of the program
@@ -312,11 +335,14 @@ class _FileWindow(tk.Frame):
         if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
             webbrowser.open_new(file)
     
-    def __init__(self, master, build_table, drawing: Path, return_cmd):
+    def __init__(self, master, build_table, ecn_file: EcnFile, ecn_change: EcnChange, return_cmd):
         tk.Frame.__init__(self, master)
-        self.root = PROJDIR.WORKING
-        self.drawing = drawing
+        
+        self.ecn_file = ecn_file
+        self.ecn_change = ecn_change
         self.build_table = build_table
+        
+        self.root = PROJDIR.WORKING
         self.folder_childs: list[tuple[str]] = list()
         self.folder_paths: list[Path] = list()
 
@@ -377,19 +403,13 @@ class _EcnWindow(tk.Frame):
         
     def _launch_file_window(self):
         selection = self.ecn_tree.return_selection()
-        ecn_drawings = self.ecn_file.ecn_drawings
-        dwg_number = self.ecn_changes[selection].dwg_number
-        new_revision = self.ecn_changes[selection].new_revision
-        
-        dwg_pdf = ecn_drawings.joinpath(dwg_number + '-' + new_revision + '.pdf')
-        if not dwg_pdf.exists():
-            raise FileNotFoundError(f"file {dwg_pdf.stem} not found in the updated drawings folder for {self.ecn_file.ecn_name}")
+        ecn_change = self.ecn_changes[selection]        
         
         if selection == None:
             return
         self._clear_window()
         
-        window = _FileWindow(self, self.build_table, dwg_pdf, self._launch_action_window)
+        window = _FileWindow(self, self.build_table, self.ecn_file, ecn_change, self._launch_action_window)
         window.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
     
     def __init__(self, master, build_table, ecn_number, return_cmd):
