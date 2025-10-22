@@ -147,7 +147,12 @@ def read_ecn_changes(ecn: Path) -> list[EcnChange]:
         if row[FM00037.DISPOSITION_COL] == "Old Product":
             continue
         
-        ecn_changes.append(EcnChange(i, value, row[FM00037.REV_COL].lstrip("-"), row[FM00037.DISPOSITION_COL], "Review"))
+        try:    # Try except for integer revisions
+            new_revision = row[FM00037.REV_COL].lstrip("-")
+        except AttributeError:
+            new_revision = row[FM00037.REV_COL]
+        
+        ecn_changes.append(EcnChange(i, value, new_revision, row[FM00037.DISPOSITION_COL], "Review"))
 
     return ecn_changes
     

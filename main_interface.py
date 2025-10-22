@@ -3,7 +3,7 @@ from enum import IntEnum
 from project_functions import EcnFile, get_ecn, read_ecn_changes, EcnChange, get_drawings, get_dwg_number_rev
 from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
-from StandardOSILib.osi_functions import osi_file_load, osi_file_store
+from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
 from shutil import copy
 from os import scandir
 import webbrowser
@@ -76,29 +76,29 @@ class _FileTree(tk.Treeview):
         
 class _FilePanel(tk.Frame):
     
-    def __init__(self, master, file_functions):
+    def __init__(self, master, file_functions: list):
         tk.Frame.__init__(self, master)
         # Button Insert Above
         cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 20, command=file_functions[0])
-        cmd_iabove_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_iabove_button.pack(padx=5, pady=5, side='top')
         # Button Insert Below
         cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 20, command=file_functions[1])
-        cmd_ibelow_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_ibelow_button.pack(padx=5, pady=5, side='top')
         # Button Delete
         cmd_delete_button = tk.Button(master=self, text="Delete File", width = 20, command=file_functions[2])
-        cmd_delete_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_delete_button.pack(padx=5, pady=5, side='top')
         # Enter Folder
         cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=20, command=file_functions[3])
-        cmd_enterfol_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_enterfol_button.pack(padx=5, pady=5, side='top')
         # Previous Folder
         cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=20, command=file_functions[4])
-        cmd_prevfol_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_prevfol_button.pack(padx=5, pady=5, side='top')
         # Open PDF
         cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=20, command=file_functions[5])
-        cmd_openpdf_button.grid(row=5, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_openpdf_button.pack(padx=5, pady=5, side='top')
         # Done
         cmd_done_button = tk.Button(master=self, text="Done", width=20, command=file_functions[6])
-        cmd_done_button.grid(row=6, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_done_button.pack(padx=5, pady=5, side='top')
         
 class _EcnTree(tk.Treeview):
     
@@ -134,20 +134,17 @@ class _EcnPanel(tk.Frame):
         tk.Frame.__init__(self, master)
         
         # Button Approve
-        cmd_approve_button = tk.Button(master=self, text="Approve", width = 20, command=ecn_functions[0])
-        cmd_approve_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_push_rev_button = tk.Button(master=self, text="Push Revision", width = 20, command=ecn_functions[0])
+        cmd_push_rev_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
         # Button See Location
         cmd_setloc_button = tk.Button(master=self, text="See Location", width = 20, command=ecn_functions[1])
         cmd_setloc_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
         # Button Set Location
         cmd_setloc_button = tk.Button(master=self, text="Set Location", width = 20, command=ecn_functions[2])
         cmd_setloc_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
-        # Button Apply
-        cmd_apply_button = tk.Button(master=self, text="Apply", width = 20, command=ecn_functions[3])
-        cmd_apply_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
         # Button Cancel
-        cmd_cancel_button = tk.Button(master=self, text="Cancel", width = 20, command=ecn_functions[4])
-        cmd_cancel_button.grid(row=4, column=0, padx=5, pady=5, sticky='nswe')
+        cmd_return_button = tk.Button(master=self, text="Return", width = 20, command=ecn_functions[3])
+        cmd_return_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
   
 class _ActionWindow(tk.Frame):
     
@@ -190,6 +187,7 @@ class _DrawingViewWindow(tk.Frame):
         drawing_view_frame.populate_tree(entries)
 
 class _FileWindow(tk.Frame):
+    """ A class that displays a file tree window with buttons to manipulate functions"""
     
     def _check_directory(self) -> bool:
         """Error Checking Function: Verify that root folder contains only folders
@@ -221,6 +219,15 @@ class _FileWindow(tk.Frame):
         return 0
     
     def _update_index(self, file_name: str, change: int) -> str:
+        """Takes a file name with an index in the format "000" and updates it by the change value.
+
+        Args:
+            file_name (str): The file name to change the index of. Index must be three numbers at the start of the file name.
+            change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
+
+        Returns:
+            str: The file name with the updated index in the format "000"
+        """
         drawing = file_name[3:]
         index = str(int(file_name[:3]) + change)
         
@@ -243,6 +250,14 @@ class _FileWindow(tk.Frame):
         build_table_paths[build_table_ind] = file_new_path  # Updates Build Table by Reference
     
     def _serialize_files(self, inc_selection: bool, change: int):
+        """Uses the current selection in the treeview, and updates the index on all files below the selection
+        (and the selection if inc_selection is set to true) by the integer change parameter.
+        
+        Args:
+            inc_selection (bool): True includes the selection when updating indexes
+            change (int): Positive values incriments while negative decriment. Updates index by integer supplied.
+        """
+            
         
         if self._check_directory():
             return
@@ -270,6 +285,12 @@ class _FileWindow(tk.Frame):
         return drawing_src
 
     def _insert_file(self, drawing_src: Path, index: str):
+        """Inserts the file from the ecn, should be called by either insert above or insert below function
+
+        Args:
+            drawing_src (Path): Path object to drawing to insert
+            index (str): Index the inserted drawing will have
+        """
         
         drawing = Path(copy(src=drawing_src, dst=self.root))
         drawing_name = drawing.name
@@ -287,6 +308,7 @@ class _FileWindow(tk.Frame):
         self._scan_folder()
     
     def _insert_above(self):
+        """Inserts the file from the ecn above the selection in the treeview"""
         
         selection = self.file_tree.return_selection()
         file_index: str = self.folder_paths[selection].stem[:4]
@@ -299,6 +321,7 @@ class _FileWindow(tk.Frame):
         self._insert_file(drawing_src, file_index)
     
     def _insert_below(self):
+        """Inserts the file from the ecn below the selection in the treeview"""
         
         selection = self.file_tree.return_selection()
         file_name = self.folder_childs[selection][1]        # Use selection index to avoid risk of going out of bounds
@@ -312,6 +335,7 @@ class _FileWindow(tk.Frame):
         self._insert_file(drawing_src, file_index)
         
     def _delete_file(self):
+        """Deletes the selected file, does not work for directories"""
         
         if self._check_directory():
             return
@@ -333,6 +357,7 @@ class _FileWindow(tk.Frame):
         self._scan_folder()
     
     def _scan_folder(self):
+        """ Scans the root directory and find all documents contained. Displays the documents to the treeview """
         self.file_tree.clear_tree()
         self.folder_childs.clear()
         self.folder_paths.clear()
@@ -352,6 +377,8 @@ class _FileWindow(tk.Frame):
         self.file_tree.populate_tree(self.folder_childs)
     
     def _enter_folder(self):
+        """Set the root directory to the folder selected in treeview"""
+        
         selection = self.file_tree.return_selection()
         if not self._check_directory():
             return
@@ -359,17 +386,28 @@ class _FileWindow(tk.Frame):
         self._scan_folder()
     
     def _prev_folder(self):
+        """Return to the parent folder of the current root directory, limits to the production drawings folder"""
         if self.root == PROJDIR.WORKING:    # don't let user out of the scope of the program
             return
         self.root = self.root.parent
         self._scan_folder()
     
     def _open_pdf(self):
+        """Opens a pdf of the selected file"""
         file = self.folder_paths[self.file_tree.return_selection()]
         if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
             webbrowser.open_new(file)
     
     def __init__(self, master, build_table, ecn_file: EcnFile, ecn_change: EcnChange, return_cmd):
+        """_summary_
+
+        Args:
+            master (_type_): tkinter frame object or equivelant
+            build_table (_type_): the dictionary containing all production drawing paths assocoated with dwg_number keys
+            ecn_file (EcnFile): EcnFile object for the ecn the _FileWindow class was called from
+            ecn_change (EcnChange): EcnChange object for the ecn change the _FileWindow class was called from
+            return_cmd (_type_): Command to return to the parent object
+        """
         tk.Frame.__init__(self, master)
         
         self.ecn_file = ecn_file
@@ -399,6 +437,39 @@ class _FileWindow(tk.Frame):
         self._scan_folder()
 
 class _EcnWindow(tk.Frame):
+    
+    def _approve_change(self):
+        """Pushes the new revision for ecn change with running change disposition """
+        selection = self.ecn_tree.return_selection()
+        ecn_change: EcnChange = self.ecn_changes[selection]
+        
+        if ecn_change.disposition != "Running Change":
+            return
+        
+        ecn_drawings = self.ecn_file.ecn_drawings
+        
+        dwg_number = ecn_change.dwg_number
+        dwg_rev = ecn_change.new_revision
+        dwg_name = dwg_number + '-' + dwg_rev + '.pdf'
+        dwg_src = ecn_drawings.joinpath(dwg_name)
+        
+        if not dwg_src.exists():
+            print(f"source file {dwg_src} to copy to production drive does not exist")
+            return
+        
+        for value in self.build_table[dwg_number]:
+            index = value.name[:4]
+            
+            prod_file = replace_file(dwg_src, value, PROJDIR.BACKUP)
+            
+            file_path = prod_file.parent
+            file_name = prod_file.name
+            file_name = index + file_name
+            
+            new_file = file_path.joinpath(file_name)
+            prod_file = prod_file.rename(new_file)
+            
+            self.build_table[dwg_number][self.build_table[dwg_number].index(value)] = prod_file
     
     def _clear_window(self):
         for widget in self.winfo_children():
@@ -450,7 +521,7 @@ class _EcnWindow(tk.Frame):
         tk.Frame.__init__(self, master)
         
         # Create Data
-        self.build_table = build_table
+        self.build_table: dict[str, list[Path]] = build_table
         try:
             self.ecn_file = get_ecn(ecn_number)
             self.ecn_changes = read_ecn_changes(self.ecn_file.ecn_file)
@@ -460,11 +531,10 @@ class _EcnWindow(tk.Frame):
         
         # Panel Functions
         self.ECN_PANEL_FUNCTIONS = (
-            None,                           # Approve Button
+            self._approve_change,           # Approve Button
             self._launch_dwg_view_window,   # See Locations of Files Button
             self._launch_file_window,       # Set new File Locations Button
-            None,                           # Apply Button
-            return_cmd,                     # Cancel Button
+            return_cmd,                     # Return Button
         )
         
         self._launch_action_window()
