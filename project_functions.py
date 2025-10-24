@@ -116,7 +116,6 @@ class EcnChange():
     dwg_number: str
     new_revision: str
     disposition: str
-    status: str         # Used to keep track of if user approved / added
 
 @dataclass
 class FM00037():
@@ -152,7 +151,7 @@ def read_ecn_changes(ecn: Path) -> list[EcnChange]:
         except AttributeError:
             new_revision = row[FM00037.REV_COL]
         
-        ecn_changes.append(EcnChange(i, value, new_revision, row[FM00037.DISPOSITION_COL], "Review"))
+        ecn_changes.append(EcnChange(i, value, new_revision, row[FM00037.DISPOSITION_COL]))
 
     return ecn_changes
     

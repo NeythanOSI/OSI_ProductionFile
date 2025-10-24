@@ -102,7 +102,7 @@ class _FilePanel(tk.Frame):
         
 class _EcnTree(tk.Treeview):
     
-    TREE_HEADERS = ("Level", "Drawing Number", "New Revision", "Disposition", "Status")
+    TREE_HEADERS = ("Level", "Drawing Number", "New Revision", "Disposition")
     
     def populate_tree(self, entries: list[tuple[str]]):
         for i, entry in enumerate(entries):
@@ -122,12 +122,10 @@ class _EcnTree(tk.Treeview):
         self.heading(self.TREE_HEADERS[1], text="Drawing Number", anchor='w')
         self.heading(self.TREE_HEADERS[2], text="New Revision", anchor='center')
         self.heading(self.TREE_HEADERS[3], text="Disposition", anchor='w')
-        self.heading(self.TREE_HEADERS[4], text="Status", anchor='w')
         self.column(self.TREE_HEADERS[0], stretch=False, width=60, anchor='center')
         self.column(self.TREE_HEADERS[1], stretch=False, width=120, anchor='w')
         self.column(self.TREE_HEADERS[2], stretch=False, width=120, anchor='center')
         self.column(self.TREE_HEADERS[3], stretch=False, width=150, anchor='w')
-        self.column(self.TREE_HEADERS[4], stretch=False, width=150, anchor='w')
 
 class _EcnPanel(tk.Frame):
     def __init__(self, master, ecn_functions):
@@ -144,8 +142,8 @@ class _EcnPanel(tk.Frame):
         cmd_setloc_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
         # Button Cancel
         cmd_return_button = tk.Button(master=self, text="Return", width = 20, command=ecn_functions[3])
-        cmd_return_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')
-  
+        cmd_return_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')  
+      
 class _ActionWindow(tk.Frame):
     
     def __init__(self, master, cmd_view, cmd_ecn):
@@ -485,7 +483,6 @@ class _EcnWindow(tk.Frame):
                     change.dwg_number,
                     change.new_revision,
                     change.disposition,
-                    change.status
                 ))
         self.ecn_tree.populate_tree(ecn_change_list)
     
