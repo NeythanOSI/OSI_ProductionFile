@@ -73,32 +73,66 @@ class _FileTree(tk.Treeview):
         self.heading(self.TREE_HEADERS[1], text="File Name", anchor='w')
         self.column(self.TREE_HEADERS[0], stretch=False, width=100, anchor='center')
         self.column(self.TREE_HEADERS[1], stretch=False, width=300, anchor='w')
-        
+ 
 class _FilePanel(tk.Frame):
     
-    def __init__(self, master, file_functions: list):
+    def _clear_frame(self):
+        for child in self.winfo_children():
+            child.pack_forget()
+            
+    def refresh(self, mode: int):
+        """Refresh Panel Functions
+
+        Args:
+            mode (int): an integer that controls command to display\n
+            0: Empty Folder, Displays Insert Above, Insert Folder, Prev Folder, Done if applicable\n
+            1: Folders, Displays Insert Folder, Delete, Enter Folder, Prev Folder, Done if appliable\n
+            2: Files, Displays Insert Above, Insert Below, Delete, Enter Folder, Prev Folder, Open PDF,
+             Done if applicable
+        """
+        self._clear_frame()
+        if mode == 0 or mode == 2:
+            self.cmd_iabove_button.pack(padx=5, pady=5, side='top')
+        if mode == 0 or mode == 2:
+            self.cmd_ibelow_button.pack(padx=5, pady=5, side='top')
+        if mode == 0 or mode == 1:
+            self.cmd_ifolder_button.pack(padx=5, pady=5, side='top')
+        if mode == 1 or mode == 2:
+            self.cmd_delete_button.pack(padx=5, pady=5, side='top')
+        if mode == 1 or mode == 2:
+            self.cmd_enterfol_button.pack(padx=5, pady=5, side='top')
+        self.cmd_prevfol_button.pack(padx=5, pady=5, side='top')
+        if mode == 2:
+            self.cmd_openpdf_button.pack(padx=5, pady=5, side='top')
+        if self.done_button:
+            self.cmd_done_button.pack(padx=5, pady=5, side='top')
+    
+    def __init__(self, master, mode: int, file_functions: list):
+        """Create a panel of functions for the _FileTree view
+
+        Args:
+            master (_type_): tkinter frame master
+            mode (int): an integer that controls command to display\n
+            0: Empty Folder, Displays Insert Above, Insert Folder, Prev Folder, Done if applicable\n
+            1: Folders, Displays Insert Folder, Delete, Enter Folder, Prev Folder, Done if appliable\n
+            2: Files, Displays Insert Above, Insert Below, Delete, Enter Folder, Prev Folder, Open PDF,
+             Done if applicable
+            file_functions (list): A list of functions each button will command,\n
+             if None is supplied as the last function (return function), the return button will not appear
+        """
         tk.Frame.__init__(self, master)
-        # Button Insert Above
-        cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 20, command=file_functions[0])
-        cmd_iabove_button.pack(padx=5, pady=5, side='top')
-        # Button Insert Below
-        cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 20, command=file_functions[1])
-        cmd_ibelow_button.pack(padx=5, pady=5, side='top')
-        # Button Delete
-        cmd_delete_button = tk.Button(master=self, text="Delete File", width = 20, command=file_functions[2])
-        cmd_delete_button.pack(padx=5, pady=5, side='top')
-        # Enter Folder
-        cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=20, command=file_functions[3])
-        cmd_enterfol_button.pack(padx=5, pady=5, side='top')
-        # Previous Folder
-        cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=20, command=file_functions[4])
-        cmd_prevfol_button.pack(padx=5, pady=5, side='top')
-        # Open PDF
-        cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=20, command=file_functions[5])
-        cmd_openpdf_button.pack(padx=5, pady=5, side='top')
-        # Done
-        cmd_done_button = tk.Button(master=self, text="Done", width=20, command=file_functions[6])
-        cmd_done_button.pack(padx=5, pady=5, side='top')
+        self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=file_functions[0])
+        self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=file_functions[1])
+        self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=file_functions[2])
+        self.cmd_delete_button = tk.Button(master=self, text="Delete", width = 15, command=file_functions[3])
+        self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=file_functions[4])
+        self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=file_functions[5])
+        self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=file_functions[6])
+        self.done_button = False
+        if file_functions[7] != None:
+            self.cmd_done_button = tk.Button(master=self, text="Done", width=15, command=file_functions[7])
+            self.done_button = True
+        self.refresh(mode)
         
 class _EcnTree(tk.Treeview):
     
@@ -132,16 +166,13 @@ class _EcnPanel(tk.Frame):
         tk.Frame.__init__(self, master)
         
         # Button Approve
-        cmd_push_rev_button = tk.Button(master=self, text="Push Revision", width = 20, command=ecn_functions[0])
+        cmd_push_rev_button = tk.Button(master=self, text="Push Revision", width = 15, command=ecn_functions[0])
         cmd_push_rev_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
         # Button See Location
-        cmd_setloc_button = tk.Button(master=self, text="See Location", width = 20, command=ecn_functions[1])
+        cmd_setloc_button = tk.Button(master=self, text="See Location", width = 15, command=ecn_functions[1])
         cmd_setloc_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
-        # Button Set Location
-        cmd_setloc_button = tk.Button(master=self, text="Set Location", width = 20, command=ecn_functions[2])
-        cmd_setloc_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
         # Button Cancel
-        cmd_return_button = tk.Button(master=self, text="Return", width = 20, command=ecn_functions[3])
+        cmd_return_button = tk.Button(master=self, text="Return", width = 15, command=ecn_functions[2])
         cmd_return_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')  
       
 class _ActionWindow(tk.Frame):
@@ -186,6 +217,17 @@ class _DrawingViewWindow(tk.Frame):
 
 class _FileWindow(tk.Frame):
     """ A class that displays a file tree window with buttons to manipulate functions"""
+    
+    def _check_dir_empty(self) -> bool:
+        """Error Checking Function: Verify that root folder is an empty folder
+
+        Returns:
+            bool: Returns True if folder contains is empty, Returns False if files or folders are present
+        """
+        if self.folder_paths.__len__() == 0:
+            return True
+        else:
+            return False
     
     def _check_directory(self) -> bool:
         """Error Checking Function: Verify that root folder contains only folders
@@ -372,7 +414,16 @@ class _FileWindow(tk.Frame):
             for key in sorted_keys:
                 self.folder_childs.append((folder_dict[key][2], folder_dict[key][1]))
                 self.folder_paths.append(folder_dict[key][0])
+                
+        # Populate the Interface
         self.file_tree.populate_tree(self.folder_childs)
+        if self._check_dir_empty():
+            self.file_panel.refresh(0)
+            return
+        if self._check_directory():
+            self.file_panel.refresh(1)
+            return
+        self.file_panel.refresh(2)
     
     def _enter_folder(self):
         """Set the root directory to the folder selected in treeview"""
@@ -396,7 +447,7 @@ class _FileWindow(tk.Frame):
         if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
             webbrowser.open_new(file)
     
-    def __init__(self, master, build_table, ecn_file: EcnFile, ecn_change: EcnChange, return_cmd):
+    def __init__(self, master, build_table, ecn_file: EcnFile, ecn_change: EcnChange, return_cmd=None):
         """_summary_
 
         Args:
@@ -404,7 +455,7 @@ class _FileWindow(tk.Frame):
             build_table (_type_): the dictionary containing all production drawing paths assocoated with dwg_number keys
             ecn_file (EcnFile): EcnFile object for the ecn the _FileWindow class was called from
             ecn_change (EcnChange): EcnChange object for the ecn change the _FileWindow class was called from
-            return_cmd (_type_): Command to return to the parent object
+            return_cmd (_type_): Command to return to the parent object, If left blank, will not have a return button
         """
         tk.Frame.__init__(self, master)
         
@@ -413,12 +464,14 @@ class _FileWindow(tk.Frame):
         self.build_table = build_table
         
         self.root = PROJDIR.WORKING
+        self.dir_type = None
         self.folder_childs: list[tuple[str]] = list()
         self.folder_paths: list[Path] = list()
 
         FILE_PANEL_FUNCTIONS = (
             self._insert_above,     # Insert Above
             self._insert_below,     # Insert Below
+            None,
             self._delete_file,      # Delete File
             self._enter_folder,     # Enter Folder
             self._prev_folder,      # Previous Folder
@@ -429,8 +482,8 @@ class _FileWindow(tk.Frame):
         # Widgets
         self.file_tree = _FileTree(self)
         self.file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
-        file_panel = _FilePanel(self, FILE_PANEL_FUNCTIONS)
-        file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        self.file_panel = _FilePanel(self, 0, FILE_PANEL_FUNCTIONS)
+        self.file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
         
         self._scan_folder()
 
@@ -492,6 +545,8 @@ class _EcnWindow(tk.Frame):
         self.ecn_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
         self.ecn_panel = _EcnPanel(self, self.ECN_PANEL_FUNCTIONS)
         self.ecn_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
+        self.file_window = _FileWindow(self, self.build_table, self.ecn_file, None)
+        self.file_window.grid(row=0, column=2, padx=5, pady=5, sticky='nswe')
         self.populate_tree()
         
     def _launch_dwg_view_window(self):
@@ -501,17 +556,6 @@ class _EcnWindow(tk.Frame):
         self._clear_window()
         dwg_number = self.ecn_changes[selection].dwg_number
         window = _DrawingViewWindow(self, self.build_table, dwg_number, self._launch_action_window)
-        window.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
-        
-    def _launch_file_window(self):
-        selection = self.ecn_tree.return_selection()
-        ecn_change = self.ecn_changes[selection]        
-        
-        if selection == None:
-            return
-        self._clear_window()
-        
-        window = _FileWindow(self, self.build_table, self.ecn_file, ecn_change, self._launch_action_window)
         window.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
     
     def __init__(self, master, build_table, ecn_number, return_cmd):
@@ -530,7 +574,6 @@ class _EcnWindow(tk.Frame):
         self.ECN_PANEL_FUNCTIONS = (
             self._approve_change,           # Approve Button
             self._launch_dwg_view_window,   # See Locations of Files Button
-            self._launch_file_window,       # Set new File Locations Button
             return_cmd,                     # Return Button
         )
         
