@@ -6,16 +6,174 @@ from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
 from shutil import copy
-from os import scandir, listdir
+from os import scandir, listdir, mkdir
 import webbrowser
 from pathlib import Path
 from dataclasses import dataclass
+from typing import NamedTuple
 
 @dataclass
 class OsiFile():
     file_path: Path
     file_name: str
     file_type: str
+    
+class OsiFolder():
+    """ Data and Functions to navigate through OSI file directories """
+    
+    class FolderType(IntEnum):
+        EMPTY = 0
+        FOLDER = 1
+        FILES = 2
+        MIX = 3
+        
+    class FolderChild(NamedTuple):
+        fpath: Path
+        fname: str
+        fsuffix: str
+        ftype: int
+        
+    def _check_dir_empty(self) -> bool:
+        """Error Checking Function: Verify that root folder is an empty folder
+
+        Returns:
+            bool: Returns True if folder contains is empty, Returns False if files or folders are present
+        """
+        if self.children.__len__() == 0:
+            return True
+        else:
+            return False
+    
+    def _check_directory(self) -> bool:
+        """Error Checking Function: Verify that root folder contains only folders
+
+        Returns:
+            bool: Returns True if folder contains only directories, Returns False if files are present
+        """
+        for child in self.children:
+            if child.fpath.is_dir():
+                continue
+            else:
+                return False
+        return True
+    
+    def _check_no_children(self, selection):
+        """Error Checking Function: Verify that selected folder is empty
+
+        Returns:
+            bool: Returns True if folder does not contain children, Returns False if children are present,
+             or if there is error
+        """
+        folder_path = self.children[selection].fpath
+        try:
+            if len(listdir(folder_path)) == 0:
+                return True
+            else:
+                return False
+        except:
+            return False
+    
+    def _scan_folder(self):
+        """ Scans the root directory and find all documents contained """
+        # Need to clear the data
+        self.children.clear()
+        
+        # Get each entry in the root directory, path, name, and type
+        with scandir(self.root) as dir:
+            child_temp: dict[str, OsiFolder.FolderChild] = dict()
+            for file in dir:
+                file_path = Path(file.path)
+                file_name = file_path.stem
+                file_suffix = file_path.suffix
+                
+                # Folders dont have a suffic
+                if file_suffix == "":
+                    file_suffix = "Folder"
+                    file_type = self.FolderType.FOLDER
+                else:
+                    file_type = self.FolderType.FILES
+                    
+                child_temp[file_name] = self.FolderChild(file_path, file_name, file_suffix, file_type)
+        
+        # Sort the keys be alphabetic / numerical order and append to the children list
+        sorted_keys = sorted(child_temp.keys())
+        for key in sorted_keys:
+            self.children.append(child_temp[key])
+            
+        # Determine if the folder is empty
+        if self.children.__len__() == 0:
+            self.type = self.FolderType.EMPTY
+            return
+        
+        # Determine if the folder contains folder or file or both
+        contains_dir = False
+        contains_file = False
+        
+        for child in self.children:
+            if child.fpath.is_dir():
+                contains_dir = True
+            else:
+                contains_file = True
+                
+        if contains_dir and contains_file:
+            self.type = self.FolderType.MIX
+            return
+        if contains_dir:
+            self.type = self.FolderType.FOLDER
+        if contains_file:
+            self.type = self.FolderType.FOLDER
+    
+    def enter_folder(self, selection):
+        child = self.children[selection]
+        if child.ftype != self.FolderType.FOLDER:
+            return
+        self.root = child.fpath
+        self._scan_folder()
+    
+    def _delete_selection(self, selection):
+        file_path: Path = self.children[selection].fpath
+        file_type: int = self.children[selection].ftype
+        
+        if file_type == self.FolderType.FOLDER:
+            if not self._check_no_children(selection):
+                print(f"attempted delete of {file_path} cannot delete folder with children")
+                Messagebox.ok("cannot delete folder with children")
+                return
+            if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
+                print(f"user canceled delete of {file_path}")
+                return
+            file_path.rmdir()
+            print(f"removed folder {file_path}")
+        elif file_type == self.FolderType.FILES:
+            if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
+                print(f"user canceled delete of {file_path}")
+                return
+            file_path.unlink()
+            print(f"removed file {file_path}")
+        else:
+            return
+        
+        self._scan_folder()        
+    
+    def _insert_folder(self, folder_name):
+        folder = self.root.joinpath(folder_name)
+        mkdir(folder)
+    
+    def _insert_file(self, file_path):
+        copy(src=file_path, dst=self.root)
+    
+    def __init__(self, start_path: Path = Path(r"X:")):
+        self.root = start_path
+        self.children: list[OsiFolder.FolderChild] = list()    # String is the File Name in the FolderChild object
+        self.type = None
+        self._scan_folder()
+
+
+
+def open_pdf(self, file: Path):
+    """Opens a pdf of the selected file"""
+    if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
+        webbrowser.open_new(file)
 
 class Root(tk.Window):
     def __init__(self):
@@ -219,6 +377,7 @@ class _DrawingViewWindow(tk.Frame):
 class _FileWindow(tk.Frame):
     """ A class that displays a file tree window with buttons to manipulate functions"""
     
+    # Refactored
     def _check_dir_empty(self) -> bool:
         """Error Checking Function: Verify that root folder is an empty folder
 
@@ -230,6 +389,7 @@ class _FileWindow(tk.Frame):
         else:
             return False
     
+    # Refactored
     def _check_directory(self) -> bool:
         """Error Checking Function: Verify that root folder contains only folders
 
@@ -243,6 +403,7 @@ class _FileWindow(tk.Frame):
                 return False
         return True
 
+    # Refactored
     def _check_no_children(self):
         """Error Checking Function: Verify that selected folder is empty
 
@@ -341,6 +502,7 @@ class _FileWindow(tk.Frame):
         drawing_src = ecn_drawings.joinpath(dwg_number + '-' + dwg_rev + '.pdf')
         return drawing_src
 
+    # Except for Serials Refactored
     def _insert_file(self, drawing_src: Path, index: str):
         """Inserts the file from the ecn, should be called by either insert above or insert below function
 
@@ -391,6 +553,7 @@ class _FileWindow(tk.Frame):
         self._serialize_files(False, 1)
         self._insert_file(drawing_src, file_index)
         
+    # Except for Serials Refactored
     def _delete_selection(self):
         """Deletes the selected file, does not work for directories"""
         selection = self.file_tree.return_selection()
@@ -415,8 +578,7 @@ class _FileWindow(tk.Frame):
             self.build_table[dwg_number].pop(index)
             file_path.unlink()
         
-        self._scan_folder()
-                
+        self._scan_folder()        
     
     def _scan_folder(self):
         """ Scans the root directory and find all documents contained. Displays the documents to the treeview """
@@ -447,6 +609,7 @@ class _FileWindow(tk.Frame):
             return
         self.file_panel.refresh(2)
     
+    # Refactored
     def _enter_folder(self):
         """Set the root directory to the folder selected in treeview"""
         
@@ -463,6 +626,7 @@ class _FileWindow(tk.Frame):
         self.root = self.root.parent
         self._scan_folder()
     
+    # Refactored
     def _open_pdf(self):
         """Opens a pdf of the selected file"""
         file = self.folder_paths[self.file_tree.return_selection()]
