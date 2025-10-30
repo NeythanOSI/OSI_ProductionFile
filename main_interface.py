@@ -1,11 +1,12 @@
 import ttkbootstrap as tk
+from ttkbootstrap.dialogs import Messagebox
 from enum import IntEnum
 from project_functions import EcnFile, get_ecn, read_ecn_changes, EcnChange, get_drawings, get_dwg_number_rev
 from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
 from shutil import copy
-from os import scandir
+from os import scandir, listdir
 import webbrowser
 from pathlib import Path
 from dataclasses import dataclass
@@ -124,7 +125,7 @@ class _FilePanel(tk.Frame):
         self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=file_functions[0])
         self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=file_functions[1])
         self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=file_functions[2])
-        self.cmd_delete_button = tk.Button(master=self, text="Delete", width = 15, command=file_functions[3])
+        self.cmd_delete_button = tk.Button(master=self, text="Delete Selected", width = 15, command=file_functions[3])
         self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=file_functions[4])
         self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=file_functions[5])
         self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=file_functions[6])
@@ -241,6 +242,22 @@ class _FileWindow(tk.Frame):
             else:
                 return False
         return True
+
+    def _check_no_children(self):
+        """Error Checking Function: Verify that selected folder is empty
+
+        Returns:
+            bool: Returns True if folder does not contain children, Returns False if children are present,
+             or if there is error
+        """
+        try:
+            selection = self.file_tree.return_selection()
+            if len(listdir(self.folder_paths[selection])) == 0:
+                return True
+            else:
+                return False
+        except:
+            return False
 
     def _error_check_insert(self, file_path: Path) -> int:
         """Checks errors before performing and data altering insert drawing functions
@@ -374,27 +391,32 @@ class _FileWindow(tk.Frame):
         self._serialize_files(False, 1)
         self._insert_file(drawing_src, file_index)
         
-    def _delete_file(self):
+    def _delete_selection(self):
         """Deletes the selected file, does not work for directories"""
-        
-        if self._check_directory():
-            return
-        
         selection = self.file_tree.return_selection()
         file_path: Path = self.folder_paths[selection]
-        dwg_number, dwg_rev = get_dwg_number_rev(file_path)
         
-        if dwg_number != self.ecn_change.dwg_number:
-            return
-        if dwg_rev != self.ecn_change.new_revision:
-            return
-        
-        self._serialize_files(False, -1)    # Lower Serial Nunbers after selected file by 1
-        index = self.build_table[dwg_number].index(file_path)   # Remove entry from build table
-        self.build_table[dwg_number].pop(index)
-        file_path.unlink()
+        if self._check_directory():
+            if not self._check_no_children():
+                print("This has children")
+                return
+            if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
+                print("Not Destroy")
+                return
+            file_path.rmdir()
+        else:
+            if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
+                print("Not Destroy")
+                return
+            print("Destroy")
+            dwg_number, dwg_rev = get_dwg_number_rev(file_path)
+            self._serialize_files(False, -1)    # Lower Serial Nunbers after selected file by 1
+            index = self.build_table[dwg_number].index(file_path)   # Remove entry from build table
+            self.build_table[dwg_number].pop(index)
+            file_path.unlink()
         
         self._scan_folder()
+                
     
     def _scan_folder(self):
         """ Scans the root directory and find all documents contained. Displays the documents to the treeview """
@@ -472,7 +494,7 @@ class _FileWindow(tk.Frame):
             self._insert_above,     # Insert Above
             self._insert_below,     # Insert Below
             None,
-            self._delete_file,      # Delete File
+            self._delete_selection,      # Delete File
             self._enter_folder,     # Enter Folder
             self._prev_folder,      # Previous Folder
             self._open_pdf,         # Open PDF
