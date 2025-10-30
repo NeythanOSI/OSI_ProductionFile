@@ -130,6 +130,13 @@ class OsiFolder():
         self.root = child.fpath
         self._scan_folder()
     
+    def _prev_folder(self):
+        """Return to the parent folder of the current root directory, limits to the production drawings folder"""
+        if self.root == self.start_path:    # don't let user out of the scope of the program
+            return
+        self.root = self.root.parent
+        self._scan_folder()
+    
     def _delete_selection(self, selection):
         file_path: Path = self.children[selection].fpath
         file_type: int = self.children[selection].ftype
@@ -163,12 +170,14 @@ class OsiFolder():
         copy(src=file_path, dst=self.root)
     
     def __init__(self, start_path: Path = Path(r"X:")):
+        self.start_path = start_path
         self.root = start_path
         self.children: list[OsiFolder.FolderChild] = list()    # String is the File Name in the FolderChild object
         self.type = None
         self._scan_folder()
 
-
+def serialize_files(directory: OsiFolder, ):
+    pass
 
 def open_pdf(self, file: Path):
     """Opens a pdf of the selected file"""
