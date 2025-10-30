@@ -83,7 +83,7 @@ class OsiFolder():
             child_temp: dict[str, OsiFolder.FolderChild] = dict()
             for file in dir:
                 file_path = Path(file.path)
-                file_name = file_path.stem
+                file_name = file_path.name
                 file_suffix = file_path.suffix
                 
                 # Folders dont have a suffic
@@ -176,8 +176,49 @@ class OsiFolder():
         self.type = None
         self._scan_folder()
 
-def serialize_files(directory: OsiFolder, ):
-    pass
+def change_index(file_name: str, change: int):
+    """Takes a file name with an index in the format "index-dwg_number-etc" and updates it by the change value.
+
+        Args:
+            file_name (str): The file name to change the index of. Index must be integers at the start of the file name.
+            change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
+
+        Returns:
+            str: The file name with the updated index in the format it was given
+    """
+    # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
+    for i in range(file_name.__len__()):
+        try:
+            int(file_name[i])
+        except ValueError:
+            break
+    
+    drawing = file_name[i:]
+    index = str(int(file_name[:i]) + change)
+    
+    # Index must keep the same number of integers, 000 -> 001, 0002 -> 0001 etc
+    for j in range(i - index.__len__()):
+        index = str(0) + index
+        
+    return index + drawing
+
+def serialize_files(directory: OsiFolder, selection: int, inc_selection: bool, change: int):
+    for i in range(selection, directory.children.__len__()):
+        if not inc_selection:       # Skip first iteration to avoid updating selected file
+            inc_selection = True    # Stops this section from looping
+            continue
+        
+        # Index the child by the change and create a new path for renaming the file
+        child = directory.children[i]
+        file_name = change_index(child.fname, change)
+        file_path = child.fpath.parent.joinpath(file_name)
+        
+        # Update the child
+        child.fpath.rename(file_path)
+        directory.children[selection] = directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
+        
+    # Do a refresh
+    directory._scan_folder()
 
 def open_pdf(self, file: Path):
     """Opens a pdf of the selected file"""
@@ -463,6 +504,7 @@ class _FileWindow(tk.Frame):
             
         return index + drawing
     
+    # Refactored except build table
     def _write_new_index(self, file: Path, change: int):
         file_name = file.name
         file_path = file.parent
@@ -476,6 +518,7 @@ class _FileWindow(tk.Frame):
         build_table_ind = build_table_paths.index(file)
         build_table_paths[build_table_ind] = file_new_path  # Updates Build Table by Reference
     
+    # Refactored
     def _serialize_files(self, inc_selection: bool, change: int):
         """Uses the current selection in the treeview, and updates the index on all files below the selection
         (and the selection if inc_selection is set to true) by the integer change parameter.
