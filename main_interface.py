@@ -32,46 +32,6 @@ class OsiFolder():
         fname: str
         fsuffix: str
         ftype: int
-        
-    def _check_dir_empty(self) -> bool:
-        """Error Checking Function: Verify that root folder is an empty folder
-
-        Returns:
-            bool: Returns True if folder contains is empty, Returns False if files or folders are present
-        """
-        if self.children.__len__() == 0:
-            return True
-        else:
-            return False
-    
-    def _check_directory(self) -> bool:
-        """Error Checking Function: Verify that root folder contains only folders
-
-        Returns:
-            bool: Returns True if folder contains only directories, Returns False if files are present
-        """
-        for child in self.children:
-            if child.fpath.is_dir():
-                continue
-            else:
-                return False
-        return True
-    
-    def _check_no_children(self, selection):
-        """Error Checking Function: Verify that selected folder is empty
-
-        Returns:
-            bool: Returns True if folder does not contain children, Returns False if children are present,
-             or if there is error
-        """
-        folder_path = self.children[selection].fpath
-        try:
-            if len(listdir(folder_path)) == 0:
-                return True
-            else:
-                return False
-        except:
-            return False
     
     def _scan_folder(self):
         """ Scans the root directory and find all documents contained """
@@ -137,38 +97,6 @@ class OsiFolder():
         self.root = self.root.parent
         self._scan_folder()
     
-    def _delete_selection(self, selection):
-        file_path: Path = self.children[selection].fpath
-        file_type: int = self.children[selection].ftype
-        
-        if file_type == self.FolderType.FOLDER:
-            if not self._check_no_children(selection):
-                print(f"attempted delete of {file_path} cannot delete folder with children")
-                Messagebox.ok("cannot delete folder with children")
-                return
-            if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
-                print(f"user canceled delete of {file_path}")
-                return
-            file_path.rmdir()
-            print(f"removed folder {file_path}")
-        elif file_type == self.FolderType.FILES:
-            if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
-                print(f"user canceled delete of {file_path}")
-                return
-            file_path.unlink()
-            print(f"removed file {file_path}")
-        else:
-            return
-        
-        self._scan_folder()        
-    
-    def _insert_folder(self, folder_name):
-        folder = self.root.joinpath(folder_name)
-        mkdir(folder)
-    
-    def _insert_file(self, file_path):
-        copy(src=file_path, dst=self.root)
-    
     def __init__(self, start_path: Path = Path(r"X:")):
         self.start_path = start_path
         self.root = start_path
@@ -219,6 +147,67 @@ def serialize_files(directory: OsiFolder, selection: int, inc_selection: bool, c
         
     # Do a refresh
     directory._scan_folder()
+
+def _delete_selection(self, directory: OsiFolder, selection: int):
+    
+    def _check_dir_empty(self) -> bool:
+        """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
+        if directory.children.__len__() == 0:
+            return True
+        else:
+            return False
+    def _check_directory(self) -> bool:
+        """Returns: Returns True if folder contains only directories, Returns False if files are present"""
+        for child in directory.children:
+            if child.fpath.is_dir():
+                continue
+            else:
+                return False
+        return True
+    def _check_no_children(selection) -> bool:
+        """Returns: Returns True if folder does not contain children, Returns False if children are present,
+             or if there is error"""
+        folder_path = directory.children[selection].fpath
+        try:
+            if len(listdir(folder_path)) == 0:
+                return True
+            else:
+                return False
+        except:
+            return False
+        
+    file_path: Path = directory.children[selection].fpath
+    file_type: int = directory.children[selection].ftype
+    
+    if file_type == OsiFolder.FolderType.FOLDER:
+        # Code to run for deleting folders
+        if not self._check_no_children(selection):
+            print(f"attempted delete of {file_path} cannot delete folder with children")
+            Messagebox.ok("cannot delete folder with children")
+            return
+        if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
+            print(f"user canceled delete of {file_path}")
+            return
+        file_path.rmdir()
+        print(f"removed folder {file_path}")
+    elif file_type == OsiFolder.FolderType.FILES:
+        # Code to run for deleting files
+        if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
+            print(f"user canceled delete of {file_path}")
+            return
+        file_path.unlink()
+        print(f"removed file {file_path}")
+    else:
+        return
+    
+    directory._scan_folder()        
+    
+def _insert_folder(directory: OsiFolder, folder_name):
+    folder = directory.root.joinpath(folder_name)
+    mkdir(folder)
+
+def _insert_file(directory: OsiFolder, file_path):
+    copy(src=file_path, dst=directory.root)
 
 def open_pdf(self, file: Path):
     """Opens a pdf of the selected file"""
@@ -540,21 +529,8 @@ class _FileWindow(tk.Frame):
             self._write_new_index(self.folder_paths[i], change)
         
         self._scan_folder()     # Update
-        
-    def _get_pdf_drawing(self) -> Path:
-        """Returns the source path for the new drawing released/updated with the ecn
 
-        Returns:
-            Path|int: Path object pointing to an updated/new drawing in the ECN folder's updated drawings folder.
-            It is recomend to check the file exists after using this function
-        """
-        ecn_drawings = self.ecn_file.ecn_drawings
-        dwg_number = self.ecn_change.dwg_number
-        dwg_rev = self.ecn_change.new_revision
-        drawing_src = ecn_drawings.joinpath(dwg_number + '-' + dwg_rev + '.pdf')
-        return drawing_src
-
-    # Except for Serials Refactored
+    # Except for Build Table Refactored
     def _insert_file(self, drawing_src: Path, index: str):
         """Inserts the file from the ecn, should be called by either insert above or insert below function
 
@@ -577,33 +553,6 @@ class _FileWindow(tk.Frame):
         else:
             self.build_table[dwg_number] = [drawing]        
         self._scan_folder()
-    
-    def _insert_above(self):
-        """Inserts the file from the ecn above the selection in the treeview"""
-        
-        selection = self.file_tree.return_selection()
-        file_index: str = self.folder_paths[selection].stem[:4]
-        drawing_src = self._get_pdf_drawing()
-        
-        if self._error_check_insert(drawing_src) != 0:
-            return
-
-        self._serialize_files(True, 1)
-        self._insert_file(drawing_src, file_index)
-    
-    def _insert_below(self):
-        """Inserts the file from the ecn below the selection in the treeview"""
-        
-        selection = self.file_tree.return_selection()
-        file_name = self.folder_childs[selection][1]        # Use selection index to avoid risk of going out of bounds
-        file_index = self._update_index(file_name, 1)[:4]   # Add +1 to the selection index to account for inserting below
-        drawing_src = self._get_pdf_drawing()               # verify drawings is in ECN folder
-        
-        if self._error_check_insert(drawing_src) != 0:
-            return
-        
-        self._serialize_files(False, 1)
-        self._insert_file(drawing_src, file_index)
         
     # Except for Serials Refactored
     def _delete_selection(self):
