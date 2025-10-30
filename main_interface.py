@@ -15,7 +15,6 @@ from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
 
-
 def open_pdf(self, file: Path):
     """Opens a pdf of the selected file"""
     if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
@@ -521,152 +520,6 @@ class _DrawingViewWindow(tk.Frame):
             pass
         drawing_view_frame.populate_tree(entries)
 
-class _FileWindow(tk.Frame):
-
-    # Except for Build Table Refactored
-    def _insert_file(self, drawing_src: Path, index: str):
-        """Inserts the file from the ecn, should be called by either insert above or insert below function
-
-        Args:
-            drawing_src (Path): Path object to drawing to insert
-            index (str): Index the inserted drawing will have
-        """
-        
-        drawing = Path(copy(src=drawing_src, dst=self.root))
-        drawing_name = drawing.name
-        drawing_parent = drawing.parent
-        
-        new_name = index + drawing_name
-        new_path = drawing_parent.joinpath(new_name)
-        drawing = drawing.rename(new_path)
-        
-        dwg_number = get_dwg_number_rev(drawing)[0]
-        if dwg_number in self.build_table.keys():
-            self.build_table[dwg_number].append(drawing)
-        else:
-            self.build_table[dwg_number] = [drawing]        
-        self._scan_folder()
-        
-    # Except for Serials Refactored
-    def _delete_selection(self):
-        """Deletes the selected file, does not work for directories"""
-        selection = self.file_tree.return_selection()
-        file_path: Path = self.folder_paths[selection]
-        
-        if self._check_directory():
-            if not self._check_no_children():
-                print("This has children")
-                return
-            if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
-                print("Not Destroy")
-                return
-            file_path.rmdir()
-        else:
-            if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
-                print("Not Destroy")
-                return
-            print("Destroy")
-            dwg_number, dwg_rev = get_dwg_number_rev(file_path)
-            self._serialize_files(False, -1)    # Lower Serial Nunbers after selected file by 1
-            index = self.build_table[dwg_number].index(file_path)   # Remove entry from build table
-            self.build_table[dwg_number].pop(index)
-            file_path.unlink()
-        
-        self._scan_folder()        
-    
-    def _scan_folder(self):
-        """ Scans the root directory and find all documents contained. Displays the documents to the treeview """
-        self.file_tree.clear_tree()
-        self.folder_childs.clear()
-        self.folder_paths.clear()
-        with scandir(self.root) as dir:
-            folder_dict = dict()
-            for file in dir:
-                file_path = Path(file.path)
-                file_name = file_path.stem
-                file_type = file_path.suffix
-                if file_type == "":
-                    file_type = "Folder"
-                folder_dict[file_name] = (file_path, file_name, file_type)
-            sorted_keys = sorted(folder_dict.keys())
-            for key in sorted_keys:
-                self.folder_childs.append((folder_dict[key][2], folder_dict[key][1]))
-                self.folder_paths.append(folder_dict[key][0])
-                
-        # Populate the Interface
-        self.file_tree.populate_tree(self.folder_childs)
-        if self._check_dir_empty():
-            self.file_panel.refresh(0)
-            return
-        if self._check_directory():
-            self.file_panel.refresh(1)
-            return
-        self.file_panel.refresh(2)
-    
-    # Refactored
-    def _enter_folder(self):
-        """Set the root directory to the folder selected in treeview"""
-        
-        selection = self.file_tree.return_selection()
-        if not self._check_directory():
-            return
-        self.root = self.folder_paths[selection]
-        self._scan_folder()
-    
-    def _prev_folder(self):
-        """Return to the parent folder of the current root directory, limits to the production drawings folder"""
-        if self.root == PROJDIR.WORKING:    # don't let user out of the scope of the program
-            return
-        self.root = self.root.parent
-        self._scan_folder()
-    
-    # Refactored
-    def _open_pdf(self):
-        """Opens a pdf of the selected file"""
-        file = self.folder_paths[self.file_tree.return_selection()]
-        if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
-            webbrowser.open_new(file)
-    
-    def __init__(self, master, build_table, ecn_file: EcnFile, ecn_change: EcnChange, return_cmd=None):
-        """_summary_
-
-        Args:
-            master (_type_): tkinter frame object or equivelant
-            build_table (_type_): the dictionary containing all production drawing paths assocoated with dwg_number keys
-            ecn_file (EcnFile): EcnFile object for the ecn the _FileWindow class was called from
-            ecn_change (EcnChange): EcnChange object for the ecn change the _FileWindow class was called from
-            return_cmd (_type_): Command to return to the parent object, If left blank, will not have a return button
-        """
-        tk.Frame.__init__(self, master)
-        
-        self.ecn_file = ecn_file
-        self.ecn_change = ecn_change
-        self.build_table = build_table
-        
-        self.root = PROJDIR.WORKING
-        self.dir_type = None
-        self.folder_childs: list[tuple[str]] = list()
-        self.folder_paths: list[Path] = list()
-
-        FILE_PANEL_FUNCTIONS = (
-            self._insert_above,     # Insert Above
-            self._insert_below,     # Insert Below
-            None,
-            self._delete_selection,      # Delete File
-            self._enter_folder,     # Enter Folder
-            self._prev_folder,      # Previous Folder
-            self._open_pdf,         # Open PDF
-            return_cmd,             # Done / Return Command
-        )
-
-        # Widgets
-        self.file_tree = _FileTree(self)
-        self.file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
-        self.file_panel = _FilePanel(self, 0, FILE_PANEL_FUNCTIONS)
-        self.file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
-        
-        self._scan_folder()
-
 class _EcnWindow(tk.Frame):
     
     def _approve_change(self):
@@ -725,7 +578,7 @@ class _EcnWindow(tk.Frame):
         self.ecn_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
         self.ecn_panel = _EcnPanel(self, self.ECN_PANEL_FUNCTIONS)
         self.ecn_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
-        self.file_window = _FileWindow(self, self.build_table, self.ecn_file, None)
+        #self.file_window = _FileWindow(self, self.build_table, self.ecn_file, None)
         self.file_window.grid(row=0, column=2, padx=5, pady=5, sticky='nswe')
         self.populate_tree()
         
