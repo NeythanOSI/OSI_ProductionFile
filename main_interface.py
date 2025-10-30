@@ -6,20 +6,25 @@ from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
 from shutil import copy
-from os import scandir, listdir, mkdir
+from os import scandir, listdir, mkdir, walk
 import webbrowser
 from pathlib import Path
 from dataclasses import dataclass
 from typing import NamedTuple
+
+def open_pdf(self, file: Path):
+    """Opens a pdf of the selected file"""
+    if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
+        webbrowser.open_new(file)
 
 @dataclass
 class OsiFile():
     file_path: Path
     file_name: str
     file_type: str
-    
+
 class OsiFolder():
-    """ Data and Functions to navigate through OSI file directories """
+    """ Collection of data and functions to handle folders and their files in the OSI directory """
     
     class FolderType(IntEnum):
         EMPTY = 0
@@ -104,115 +109,169 @@ class OsiFolder():
         self.type = None
         self._scan_folder()
 
-def change_index(file_name: str, change: int):
-    """Takes a file name with an index in the format "index-dwg_number-etc" and updates it by the change value.
+class DrawingDrive():
+    """ Collection of data and functions to handle where production drawings are stored """
+    
+    def get_drawings(Folder: Path) -> dict[str, list[str]]:
+        """Walks through the directory and all subfolders of that directory and returns a dictionary containing
+        all Pathlib Paths where the drawings are found using the drawing number as a key.
 
         Args:
-            file_name (str): The file name to change the index of. Index must be integers at the start of the file name.
-            change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
+            Folder (Path | WindowsPath | PosixPath): Directory that is walked
 
         Returns:
-            str: The file name with the updated index in the format it was given
-    """
-    # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
-    for i in range(file_name.__len__()):
-        try:
-            int(file_name[i])
-        except ValueError:
-            break
-    
-    drawing = file_name[i:]
-    index = str(int(file_name[:i]) + change)
-    
-    # Index must keep the same number of integers, 000 -> 001, 0002 -> 0001 etc
-    for j in range(i - index.__len__()):
-        index = str(0) + index
+            dict[str, list[str]]: Dictionary, Key is a string that is the drawing number. Value is a list of
+            Pathlib Paths where each copy of the drawing is found.
+        """
+        build_table: dict[str, list[Path]] = dict()
+        for (root, dirs, files) in walk(Folder, True):
+            for file in files:
+                if file == "":                            # Check for directory with no files
+                    continue
+                dwg_number_rev = get_dwg_number_rev(Path(file))
+                if dwg_number_rev is None:                       # Check for valid drawing number
+                    continue
+                dwg_number = dwg_number_rev[0]
+                
+                if dwg_number not in build_table:
+                    build_table[dwg_number] = [Path(root).joinpath(file)]
+                else:
+                    build_table[dwg_number].append(Path(root).joinpath(file))
+        return build_table
         
-    return index + drawing
+    def update_file_table(self, file_table: dict[str, list[Path]], key: str, old_path: Path, new_path: Path = None):
+        """Updates the file table
 
-def serialize_files(directory: OsiFolder, selection: int, inc_selection: bool, change: int):
-    for i in range(selection, directory.children.__len__()):
-        if not inc_selection:       # Skip first iteration to avoid updating selected file
-            inc_selection = True    # Stops this section from looping
-            continue
-        
-        # Index the child by the change and create a new path for renaming the file
-        child = directory.children[i]
-        file_name = change_index(child.fname, change)
-        file_path = child.fpath.parent.joinpath(file_name)
-        
-        # Update the child
-        child.fpath.rename(file_path)
-        directory.children[selection] = directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
-        
-    # Do a refresh
-    directory._scan_folder()
+        Args:
+            file_table (dict[str, list[Path]]): A dictionary using drawing names as keys, for a list of Paths
+            key (str): The drawing name
+            old_path (Path): The path to change or remove
+            new_path (Path, optional): Replaces the old path with the new one if supplied. Defaults to None.
+        """
+        index = file_table[key].index(old_path)
+        file_table[key].pop(index)
+        if new_path != None:
+            file_table[key].append(new_path)
 
-def _delete_selection(self, directory: OsiFolder, selection: int):
-    
-    def _check_dir_empty(self) -> bool:
-        """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
-        if directory.children.__len__() == 0:
-            return True
-        else:
-            return False
-    def _check_directory(self) -> bool:
-        """Returns: Returns True if folder contains only directories, Returns False if files are present"""
-        for child in directory.children:
-            if child.fpath.is_dir():
+    def change_index(self, file_name: str, change: int):
+        """Takes a file name with an index in the format "index-dwg_number-etc" and updates it by the change value.
+
+            Args:
+                file_name (str): The file name to change the index of. Index must be integers at the start of the file name.
+                change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
+
+            Returns:
+                str: The file name with the updated index in the format it was given
+        """
+        # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
+        for i in range(file_name.__len__()):
+            try:
+                int(file_name[i])
+            except ValueError:
+                break
+        
+        drawing = file_name[i:]
+        index = str(int(file_name[:i]) + change)
+        
+        # Index must keep the same number of integers, 000 -> 001, 0002 -> 0001 etc
+        for j in range(i - index.__len__()):
+            index = str(0) + index
+            
+        return index + drawing
+
+    def serialize_files(self, selection: int, inc_selection: bool, change: int):
+        old_children = list()
+        new_children = list()
+        for i in range(selection, self.directory.children.__len__()):
+            if not inc_selection:       # Skip first iteration to avoid updating selected file
+                inc_selection = True    # Stops this section from looping
                 continue
-            else:
-                return False
-        return True
-    def _check_no_children(selection) -> bool:
-        """Returns: Returns True if folder does not contain children, Returns False if children are present,
-             or if there is error"""
-        folder_path = directory.children[selection].fpath
-        try:
-            if len(listdir(folder_path)) == 0:
+            
+            # Save data for updating the file_table
+            old_children.append((get_dwg_number_rev(child.fpath)[0], child.fpath))
+            
+            # Index the child by the change and create a new path for renaming the file
+            child = self.directory.children[i]
+            file_name = self.change_index(child.fname, change)
+            file_path = child.fpath.parent.joinpath(file_name)
+            new_children.append(file_path)  # Keep track for updating file_table
+            
+            # Update the child
+            child.fpath.rename(file_path)
+            self.directory.children[selection] = self.directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
+            
+        # Update the build table
+        for i, child in enumerate(old_children):
+            self.update_file_table(self.file_table, child[0], child[1], new_children[i])
+            
+        # Do a refresh
+        self.directory._scan_folder()
+
+    def _insert_folder(directory: OsiFolder, folder_name):
+        folder = directory.root.joinpath(folder_name)
+        mkdir(folder)
+    
+    def _insert_file(directory: OsiFolder, file_path):
+        copy(src=file_path, dst=directory.root)
+    
+    def _delete_selection(self, selection: int):
+        
+        def _check_dir_empty(self) -> bool:
+            """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
+            if directory.children.__len__() == 0:
                 return True
             else:
                 return False
-        except:
-            return False
+        def _check_directory(self) -> bool:
+            """Returns: Returns True if folder contains only directories, Returns False if files are present"""
+            for child in directory.children:
+                if child.fpath.is_dir():
+                    continue
+                else:
+                    return False
+            return True
+        def _check_no_children(selection) -> bool:
+            """Returns: Returns True if folder does not contain children, Returns False if children are present,
+                or if there is error"""
+            folder_path = directory.children[selection].fpath
+            try:
+                if len(listdir(folder_path)) == 0:
+                    return True
+                else:
+                    return False
+            except:
+                return False
+            
+        file_path: Path = self.directory.children[selection].fpath
+        file_type: int = self.directory.children[selection].ftype
         
-    file_path: Path = directory.children[selection].fpath
-    file_type: int = directory.children[selection].ftype
-    
-    if file_type == OsiFolder.FolderType.FOLDER:
-        # Code to run for deleting folders
-        if not self._check_no_children(selection):
-            print(f"attempted delete of {file_path} cannot delete folder with children")
-            Messagebox.ok("cannot delete folder with children")
+        if file_type == OsiFolder.FolderType.FOLDER:
+            # Code to run for deleting folders
+            if not self._check_no_children(selection):
+                print(f"attempted delete of {file_path} cannot delete folder with children")
+                Messagebox.ok("cannot delete folder with children")
+                return
+            if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
+                print(f"user canceled delete of {file_path}")
+                return
+            
+            file_path.rmdir()            
+            print(f"removed folder {file_path}")
+        elif file_type == OsiFolder.FolderType.FILES:
+            # Code to run for deleting files
+            if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
+                print(f"user canceled delete of {file_path}")
+                return
+            file_path.unlink()
+            print(f"removed file {file_path}")
+        else:
             return
-        if Messagebox.yesno("are you sure, this will permenantly deletes the folder") == "No":
-            print(f"user canceled delete of {file_path}")
-            return
-        file_path.rmdir()
-        print(f"removed folder {file_path}")
-    elif file_type == OsiFolder.FolderType.FILES:
-        # Code to run for deleting files
-        if Messagebox.yesno("are you sure, this will permenantly deletes the file") == 'No':
-            print(f"user canceled delete of {file_path}")
-            return
-        file_path.unlink()
-        print(f"removed file {file_path}")
-    else:
-        return
-    
-    directory._scan_folder()        
-    
-def _insert_folder(directory: OsiFolder, folder_name):
-    folder = directory.root.joinpath(folder_name)
-    mkdir(folder)
+        
+        self.directory._scan_folder()
 
-def _insert_file(directory: OsiFolder, file_path):
-    copy(src=file_path, dst=directory.root)
-
-def open_pdf(self, file: Path):
-    """Opens a pdf of the selected file"""
-    if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
-        webbrowser.open_new(file)
+    def __init__(self, directory: OsiFolder):
+        self.file_table = get_drawings(PROJDIR.WORKING)
+        self.directory = directory
 
 class Root(tk.Window):
     def __init__(self):
@@ -414,121 +473,6 @@ class _DrawingViewWindow(tk.Frame):
         drawing_view_frame.populate_tree(entries)
 
 class _FileWindow(tk.Frame):
-    """ A class that displays a file tree window with buttons to manipulate functions"""
-    
-    # Refactored
-    def _check_dir_empty(self) -> bool:
-        """Error Checking Function: Verify that root folder is an empty folder
-
-        Returns:
-            bool: Returns True if folder contains is empty, Returns False if files or folders are present
-        """
-        if self.folder_paths.__len__() == 0:
-            return True
-        else:
-            return False
-    
-    # Refactored
-    def _check_directory(self) -> bool:
-        """Error Checking Function: Verify that root folder contains only folders
-
-        Returns:
-            bool: Returns True if folder contains only directories, Returns False if files are present
-        """
-        for path in self.folder_paths:
-            if path.is_dir():
-                continue
-            else:
-                return False
-        return True
-
-    # Refactored
-    def _check_no_children(self):
-        """Error Checking Function: Verify that selected folder is empty
-
-        Returns:
-            bool: Returns True if folder does not contain children, Returns False if children are present,
-             or if there is error
-        """
-        try:
-            selection = self.file_tree.return_selection()
-            if len(listdir(self.folder_paths[selection])) == 0:
-                return True
-            else:
-                return False
-        except:
-            return False
-
-    def _error_check_insert(self, file_path: Path) -> int:
-        """Checks errors before performing and data altering insert drawing functions
-
-        Returns:
-            int: Returns 1 if the drawing file to copy does not exist\n
-            Returns 2 if the root folder is a directory\n
-            Returns 0 if successful \n
-        """
-        if not file_path.exists():
-            print(FileNotFoundError(f"source file {file_path} to copy to production drive does not exist"))
-            return 1
-        if self._check_directory():
-            print(TypeError(f"cannot insert drawing pdf in directory folder"))
-            return 2
-        return 0
-    
-    def _update_index(self, file_name: str, change: int) -> str:
-        """Takes a file name with an index in the format "000" and updates it by the change value.
-
-        Args:
-            file_name (str): The file name to change the index of. Index must be three numbers at the start of the file name.
-            change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
-
-        Returns:
-            str: The file name with the updated index in the format "000"
-        """
-        drawing = file_name[3:]
-        index = str(int(file_name[:3]) + change)
-        
-        for i in range(3 - index.__len__()):
-            index = str(0) + index
-            
-        return index + drawing
-    
-    # Refactored except build table
-    def _write_new_index(self, file: Path, change: int):
-        file_name = file.name
-        file_path = file.parent
-        dwg_number = get_dwg_number_rev(file)[0]
-        
-        file_new = self._update_index(file_name, change)
-        file_new_path = file_path.joinpath(file_new)
-        file.rename(file_new_path)
-        
-        build_table_paths: list[Path] = self.build_table[dwg_number]
-        build_table_ind = build_table_paths.index(file)
-        build_table_paths[build_table_ind] = file_new_path  # Updates Build Table by Reference
-    
-    # Refactored
-    def _serialize_files(self, inc_selection: bool, change: int):
-        """Uses the current selection in the treeview, and updates the index on all files below the selection
-        (and the selection if inc_selection is set to true) by the integer change parameter.
-        
-        Args:
-            inc_selection (bool): True includes the selection when updating indexes
-            change (int): Positive values incriments while negative decriment. Updates index by integer supplied.
-        """
-            
-        
-        if self._check_directory():
-            return
-        
-        selection = self.file_tree.return_selection()
-        for i in range(selection, self.folder_childs.__len__()):
-            if not inc_selection:       # Skip first iteration to avoid updating selected file
-                inc_selection = True    # Stops this section from looping
-                continue
-            self._write_new_index(self.folder_paths[i], change)
-        
-        self._scan_folder()     # Update
 
     # Except for Build Table Refactored
     def _insert_file(self, drawing_src: Path, index: str):
