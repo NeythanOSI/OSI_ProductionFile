@@ -1,5 +1,5 @@
 import ttkbootstrap as tk
-from ttkbootstrap.dialogs import Messagebox
+from ttkbootstrap.dialogs import Messagebox, Querybox
 from tkinter.filedialog import askopenfilename
 import openpyxl
 
@@ -15,6 +15,31 @@ from project_functions import read_ecn_changes, get_dwg_number_rev
 from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
+
+""" Notes about the code base
+    Author:
+        Neythan P, 216-904-2378
+    Data Published:
+        Development
+    Purpose: 
+        Production drive has drawings indexed to make build instructions,
+        See every location of a specific drawing
+        Update drawings to new revisions at the click of a button
+        Add new drawings and remove drawings from the production drive
+        Add new folders and delete folders to organise work instructions
+    Notes on the Code Base:
+        1.  Data with methods specific to only that data are stored in classes at the top of the file
+                E.G. ECN Data, methods to read ecn files, and its state is the data found in that file
+                E.G. OsiFolder, methods for reading and creating folders, and its state is the data of the active folder
+        2.  Each graphical ui element frame and treeview is its own object
+                E.G. _DrawingViewTree, All lines of code to make the ui are contained in the class
+        3.  Functions that are not specific to one set of data are in the global scope
+                E.G. insert file alters the file table and the osi directory
+        4.  If a function has paremeters, and is called by a button press, the function is reimplimented
+                inside the object that uses it, becuase tkinter buttons cannot supply parameters
+                E.G. _insert_file is implimented in the _FilePanel, The _FilePanel object supplies the parameters
+                        and puts it in a method for the button to be able to call it"""
+    
 
 def open_pdf(self, file: Path):
     """Opens a pdf of the selected file"""
@@ -92,8 +117,8 @@ class OsiFolder():
         if contains_file:
             self.type = self.FolderType.FOLDER
     
-    def enter_folder(self, selection):
-        child = self.children[selection]
+    def enter_folder(self):
+        child = self.children[self.selection]
         if child.ftype != self.FolderType.FOLDER:
             return
         self.root = child.fpath
@@ -106,17 +131,33 @@ class OsiFolder():
         self.root = self.root.parent
         self._scan_folder()
     
+    def _insert_folder(self):
+        folder_name = Querybox.get_string("Type Folder Name")
+        if type(folder_name) == None:
+            return
+        folder = self.root.joinpath(folder_name)
+        try:
+            mkdir(folder)
+        except FileExistsError:
+            Messagebox.ok("file already exists")
+            return
+        except FileNotFoundError:
+            Messagebox.ok("an error occured")
+            return
+        self._scan_folder()
+    
     def __init__(self, start_path: Path = Path(r"X:")):
         self.start_path = start_path
         self.root = start_path
         self.children: list[OsiFolder.FolderChild] = list()    # String is the File Name in the FolderChild object
+        self.selection = None
         self.type = None
         self._scan_folder()
 
-class DrawingDrive():
+class FileTable():
     """ Collection of data and functions to handle where production drawings are stored """
     
-    def get_drawings(self, Folder: Path) -> dict[str, list[Path]]:
+    def _get_drawings(self, Folder: Path) -> dict[str, list[Path]]:
         """Walks through the directory and all subfolders of that directory and returns a dictionary containing
         all Pathlib Paths where the drawings are found using the drawing number as a key.
 
@@ -163,185 +204,180 @@ class DrawingDrive():
         else:
             self.file_table[key] = [new_path]
 
-    def get_index_length(self, file_name: str):
-        # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
-        for i in range(file_name.__len__()):
-            try:
-                int(file_name[i])
-            except ValueError:
-                break
-        return i
-
-    def change_index(self, file_name: str, change: int):
-        """Takes a file name with an index in the format "index-dwg_number-etc" and updates it by the change value.
-
-            Args:
-                file_name (str): The file name to change the index of. Index must be integers at the start of the file name.
-                change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
-
-            Returns:
-                str: The file name with the updated index in the format it was given
-        """
-        # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
-        i = self.get_index_length(file_name)
-        
-        drawing = file_name[i:]
-        index = str(int(file_name[:i]) + change)
-        
-        # Index must keep the same number of integers, 000 -> 001, 0002 -> 0001 etc
-        for j in range(i - index.__len__()):
-            index = str(0) + index
-            
-        return index + drawing
-
-    def serialize_files(self, directory: OsiFolder, selection: int, inc_selection: bool, change: int):
-        old_children = list()
-        new_children = list()
-        for i in range(selection, directory.children.__len__()):
-            if not inc_selection:       # Skip first iteration to avoid updating selected file
-                inc_selection = True    # Stops this section from looping
-                continue
-            
-            # Index the child by the change and create a new path for renaming the file
-            child = directory.children[i]
-            old_children.append((get_dwg_number_rev(child.fpath)[0], child.fpath))  # Save data for updating the file_table
-            file_name = self.change_index(child.fname, change)
-            file_path = child.fpath.parent.joinpath(file_name)
-            new_children.append(file_path)  # Keep track for updating file_table
-            
-            # Update the child
-            child.fpath.rename(file_path)
-            directory.children[selection] = directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
-            
-        # Update the build table
-        for i, child in enumerate(old_children):
-            self.update_file_table(child[0], child[1], new_children[i])
-            
-        # Do a refresh
-        directory._scan_folder()
-
-    def _insert_folder(self, directory: OsiFolder, folder_name):
-        folder = directory.root.joinpath(folder_name)
-        mkdir(folder)
-        directory._scan_folder()
-    
-    def _insert_file(self, directory: OsiFolder, selection: int, above: bool = True):
-        
-        file_path = Path(askopenfilename(initialdir="X:"))
-        if file_path.name == "":
-            return
-        
-        if above:
-            # Get the selected files index
-            selection_name = directory.children[selection].fname
-            i = self.get_index_length(selection_name)+1
-            index = selection_name[:i]
-            
-            # Serialize up selected file and its below files
-            self.serialize_files(selection, True, 1)
-        else:
-            # Get the selected files index and incriment
-            selection_name = directory.children[selection].fname
-            i = self.get_index_length(selection_name)+1
-            index = selection_name[:i]
-            index = self.change_index(index, 1)
-            
-            # Serialize up below files
-            self.serialize_files(selection, False, 1)
-            
-        # Filling below, means stealing the below selected, and indexing below selected
-        file_path = Path(copy(src=file_path, dst=directory.root))
-        file_path_new = file_path.parent.joinpath(index + file_path.name)
-        file_path = file_path.rename(file_path_new)
-        
-        # Add to File Table
-        self.add_file_table_entry(get_dwg_number_rev(file_path)[0], file_path)
-            
-        # Updates
-        directory._scan_folder()
-    
-    def _delete_selection(self, directory: OsiFolder, selection: int):
-        
-        def _check_dir_empty() -> bool:
-            """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
-            if self.directory.children.__len__() == 0:
-                return True
-            else:
-                return False
-        def _check_directory() -> bool:
-            """Returns: Returns True if folder contains only directories, Returns False if files are present"""
-            for child in directory.children:
-                if child.fpath.is_dir():
-                    continue
-                else:
-                    return False
-            return True
-        def _check_no_children(selection) -> bool:
-            """Returns: Returns True if folder does not contain children, Returns False if children are present,
-                or if there is error"""
-            folder_path = directory.children[selection].fpath
-            try:
-                if len(listdir(folder_path)) == 0:
-                    return True
-                else:
-                    return False
-            except:
-                return False
-            
-        file_path: Path = directory.children[selection].fpath
-        file_type: int = directory.children[selection].ftype
-        
-        if file_type == OsiFolder.FolderType.FOLDER:
-            # Code to run for deleting folders
-            if not _check_no_children(selection):
-                print(f"attempted delete of {file_path} cannot delete folder with children")
-                Messagebox.ok("cannot delete folder with children")
-                return
-            if Messagebox.yesno("are you sure, this will permenantly deletes the folder") != "Yes":
-                print(f"user canceled delete of {file_path}")
-                return
-            file_path.rmdir()            
-            print(f"removed folder {file_path}")
-        elif file_type == OsiFolder.FolderType.FILES:
-            # Code to run for deleting files
-            if Messagebox.yesno("are you sure, this will permenantly deletes the file") != 'Yes':
-                print(f"user canceled delete of {file_path}")
-                return
-
-            self.serialize_files(selection, False, -1)
-            self.update_file_table(get_dwg_number_rev(file_path)[0], file_path)
-            file_path.unlink()
-            print(f"removed file {file_path}")
-        else:
-            return
-
-        directory._scan_folder()
-
-    def _update_drawings(self, dwg_path: Path):
-        dwg_number = get_dwg_number_rev(dwg_path)[0]
-        
-        for file_path in self.file_table[dwg_number]:
-            # Get index of the file being replaced
-            file_name = file_path.name
-            ind_length = self.get_index_length(file_name)+1
-            index = file_name[:ind_length]
-            
-            # Replace file and change name to include index
-            new_file = replace_file(dwg_path, file_path, PROJDIR.BACKUP)
-            rename_file = new_file.parent.joinpath(index + new_file.name)
-            new_file = new_file.rename(rename_file)
-            
-            # Update Build Table
-            self.file_table[dwg_number][self.file_table[dwg_number].index(file_path)] = new_file     
-
-    def _get_file_paths(self, drawing: str) -> list[str, Path]:
+    def get_file_paths(self, drawing: str) -> list[str, Path]:
         entries = list()
         for entry in self.file_table[drawing]:
             entries.append((None, entry))
         return entries
 
     def __init__(self, drive_root: Path):
-        self.file_table: dict[str, list[Path]] = self.get_drawings(drive_root)
+        self.file_table: dict[str, list[Path]] = self._get_drawings(drive_root)
+
+def get_index_length(file_name: str):
+    # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
+    for i in range(file_name.__len__()):
+        try:
+            int(file_name[i])
+        except ValueError:
+            break
+    return i
+
+def change_index(file_name: str, change: int):
+    """Takes a file name with an index in the format "index-dwg_number-etc" and updates it by the change value.
+
+        Args:
+            file_name (str): The file name to change the index of. Index must be integers at the start of the file name.
+            change (int): The integer to change the index by. Negative numbers decriment, Positive numbers incriment
+
+        Returns:
+            str: The file name with the updated index in the format it was given
+    """
+    # Get the ammount of numbers that make up the index, This assumes the index is a numberical number at the start
+    i = get_index_length(file_name)
+    
+    drawing = file_name[i:]
+    index = str(int(file_name[:i]) + change)
+    
+    # Index must keep the same number of integers, 000 -> 001, 0002 -> 0001 etc
+    for j in range(i - index.__len__()):
+        index = str(0) + index
+        
+    return index + drawing
+
+def serialize_files(directory: OsiFolder, file_table: FileTable, inc_selection: bool, change: int):
+    old_children = list()
+    new_children = list()
+    for i in range(directory.selection, directory.children.__len__()):
+        if not inc_selection:       # Skip first iteration to avoid updating selected file
+            inc_selection = True    # Stops this section from looping
+            continue
+        
+        # Index the child by the change and create a new path for renaming the file
+        child = directory.children[i]
+        old_children.append((get_dwg_number_rev(child.fpath)[0], child.fpath))  # Save data for updating the file_table
+        file_name = change_index(child.fname, change)
+        file_path = child.fpath.parent.joinpath(file_name)
+        new_children.append(file_path)  # Keep track for updating file_table
+        
+        # Update the child
+        child.fpath.rename(file_path)
+        directory.children[directory.selection] = directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
+        
+    # Update the build table
+    for i, child in enumerate(old_children):
+        file_table.update_file_table(child[0], child[1], new_children[i])
+        
+    # Do a refresh
+    directory._scan_folder()
+
+def _insert_file(directory: OsiFolder, file_table: FileTable, above: bool = True):
+    
+    file_path = Path(askopenfilename(initialdir="X:"))
+    if file_path.name == "":
+        return
+    
+    if above:
+        # Get the selected files index
+        selection_name = directory.children[directory.selection].fname
+        i = get_index_length(selection_name)+1
+        index = selection_name[:i]
+        
+        # Serialize up selected file and its below files
+        serialize_files(directory, file_table, True, 1)
+    else:
+        # Get the selected files index and incriment
+        selection_name = directory.children[directory.selection].fname
+        i = get_index_length(selection_name)+1
+        index = selection_name[:i]
+        index = change_index(index, 1)
+        
+        # Serialize up below files
+        serialize_files(directory, file_table, False, 1)
+        
+    # Filling below, means stealing the below selected, and indexing below selected
+    file_path = Path(copy(src=file_path, dst=directory.root))
+    file_path_new = file_path.parent.joinpath(index + file_path.name)
+    file_path = file_path.rename(file_path_new)
+    
+    # Add to File Table
+    file_table.add_file_table_entry(get_dwg_number_rev(file_path)[0], file_path)
+        
+    # Updates
+    directory._scan_folder()
+
+def _delete_selection(directory: OsiFolder, file_table: FileTable):
+    
+    def _check_dir_empty() -> bool:
+        """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
+        if directory.children.__len__() == 0:
+            return True
+        else:
+            return False
+    def _check_directory() -> bool:
+        """Returns: Returns True if folder contains only directories, Returns False if files are present"""
+        for child in directory.children:
+            if child.fpath.is_dir():
+                continue
+            else:
+                return False
+        return True
+    def _check_no_children(selection) -> bool:
+        """Returns: Returns True if folder does not contain children, Returns False if children are present,
+            or if there is error"""
+        folder_path = directory.children[selection].fpath
+        try:
+            if len(listdir(folder_path)) == 0:
+                return True
+            else:
+                return False
+        except:
+            return False
+        
+    file_path: Path = directory.children[directory.selection].fpath
+    file_type: int = directory.children[directory.selection].ftype
+    
+    if file_type == OsiFolder.FolderType.FOLDER:
+        # Code to run for deleting folders
+        if not _check_no_children(directory.selection):
+            print(f"attempted delete of {file_path} cannot delete folder with children")
+            Messagebox.ok("cannot delete folder with children")
+            return
+        if Messagebox.yesno("are you sure, this will permenantly deletes the folder") != "Yes":
+            print(f"user canceled delete of {file_path}")
+            return
+        file_path.rmdir()            
+        print(f"removed folder {file_path}")
+    elif file_type == OsiFolder.FolderType.FILES:
+        # Code to run for deleting files
+        if Messagebox.yesno("are you sure, this will permenantly deletes the file") != 'Yes':
+            print(f"user canceled delete of {file_path}")
+            return
+
+        serialize_files(directory, file_table, False, -1)
+        file_table.update_file_table(get_dwg_number_rev(file_path)[0], file_path)
+        file_path.unlink()
+        print(f"removed file {file_path}")
+    else:
+        return
+
+    directory._scan_folder()
+
+def _update_drawings(file_table: FileTable, dwg_path: Path):
+    dwg_number = get_dwg_number_rev(dwg_path)[0]
+    
+    for file_path in file_table.file_table[dwg_number]:
+        # Get index of the file being replaced
+        file_name = file_path.name
+        ind_length = get_index_length(file_name)+1
+        index = file_name[:ind_length]
+        
+        # Replace file and change name to include index
+        new_file = replace_file(dwg_path, file_path, PROJDIR.BACKUP)
+        rename_file = new_file.parent.joinpath(index + new_file.name)
+        new_file = new_file.rename(rename_file)
+        
+        # Update Build Table
+        file_table.file_table[dwg_number][file_table.file_table[dwg_number].index(file_path)] = new_file
 
 class EcnFileManager():
     
@@ -526,7 +562,7 @@ class _FilePanel(tk.Frame):
         if self.done_button:
             self.cmd_done_button.pack(padx=5, pady=5, side='top')
     
-    def __init__(self, master, mode: int, drive: DrawingDrive, osi_folder: OsiFolder, return_cmd = None):
+    def __init__(self, master, mode: int, osi_folder: OsiFolder, file_table: FileTable, return_cmd = None):
         """Create a panel of functions for the _FileTree view
 
         Args:
@@ -539,10 +575,19 @@ class _FilePanel(tk.Frame):
             file_functions (list): A list of functions each button will command,\n
              if None is supplied as the last function (return function), the return button will not appear
         """
+        def _insert_above():
+            _insert_file(osi_folder, file_table, True)
+            
+        def _insert_below():
+            _insert_file(osi_folder, file_table, False)
+        
+        def _delete():
+            _delete_selection(osi_folder, file_table)
+        
         tk.Frame.__init__(self, master)
-        self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=file_functions[0])
-        self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=file_functions[1])
-        self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=file_functions[2])
+        self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=_insert_file)
+        self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=_insert_below[1])
+        self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=osi_folder._insert_folder)
         self.cmd_delete_button = tk.Button(master=self, text="Delete Selected", width = 15, command=file_functions[3])
         self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=osi_folder.enter_folder)
         self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=osi_folder.prev_folder)
@@ -709,7 +754,7 @@ class ProductionFileFrame(tk.Frame):
     def _launch_drawing_view(self):
         dwg_number = self.active_frame.cmd_viewdrawing_var.get()
         try:
-            dwg_paths = self.drive._get_file_paths(dwg_number)
+            dwg_paths = self.file_table.get_file_paths(dwg_number)
         except KeyError:
             Messagebox.ok(f"Part number {dwg_number} not in directory")
             return
@@ -723,9 +768,9 @@ class ProductionFileFrame(tk.Frame):
         # Clear Window and Pack New Frame
         self._clear_window()
         active_frame = tk.Frame(self)
+        file_panel = _FilePanel(active_frame, 0, osi_folder, self.file_table, self._launch_action_window)
         active_frame.pack(side="top",padx=5, pady=5)
         
-        file_panel = _FilePanel(active_frame, )
     
     # still needs refactored
     def _launch_ecn_window(self):
@@ -742,7 +787,7 @@ class ProductionFileFrame(tk.Frame):
     
     def __init__(self, master):
         tk.Frame.__init__(self, master=master)
-        self.drive = DrawingDrive(PROJDIR.WORKING)
+        self.file_table = FileTable(PROJDIR.WORKING)
         self._launch_action_window()
         
 if __name__ == '__main__':

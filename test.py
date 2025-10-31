@@ -1,9 +1,14 @@
-from ttkbootstrap.dialogs import Messagebox
-error = ["FA-00123", "FA-00125", "MSA-00125"]
-error_string = "The following are not in the updated drawings folder\n"
+from ttkbootstrap.dialogs import Querybox
+import ttkbootstrap as tk
+from os import mkdir
+from project_data import PROJDIR
 
-for err in error:
-    error_string = error_string + err + "\n"
-    print(error_string)
-
-Messagebox.ok(error_string)
+def _insert_folder():
+    root = PROJDIR.WORKING
+    folder_name = Querybox.get_string("Type Folder Name")
+    if type(folder_name) == None:
+        return
+    folder = root.joinpath(folder_name)
+    mkdir(folder)
+    
+_insert_folder()
