@@ -41,7 +41,7 @@ from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_
                         and puts it in a method for the button to be able to call it"""
     
 
-def open_pdf(self, file: Path):
+def open_pdf(file: Path):
     """Opens a pdf of the selected file"""
     if file.suffix == ".pdf" or file.suffix == ".PDF" or file.suffix == ".Pdf":
         webbrowser.open_new(file)
@@ -118,7 +118,7 @@ class OsiFolder():
         if contains_dir:
             self.type = self.FolderType.FOLDER
         if contains_file:
-            self.type = self.FolderType.FOLDER
+            self.type = self.FolderType.FILES
     
     def enter_folder(self):
         if self.selection == None:
@@ -280,14 +280,16 @@ def serialize_files(directory: OsiFolder, file_table: FileTable, inc_selection: 
     directory._scan_folder()
 
 def _insert_file(directory: OsiFolder, file_table: FileTable, above: bool = True):
-    if directory.selection == None:
+    if directory.selection == None and directory.type != directory.FolderType.EMPTY:
         return
     
     file_path = Path(askopenfilename(initialdir="X:"))
     if file_path.name == "":
         return
     
-    if above:
+    if directory.type == directory.FolderType.EMPTY:
+        index = "001-"
+    elif above:
         # Get the selected files index
         selection_name = directory.children[directory.selection].fname
         i = get_index_length(selection_name)+1
@@ -519,15 +521,17 @@ class _FileTree(tk.Treeview):
     
     TREE_HEADERS = ("File Type", "File Name")
     
-    def clear_tree(self):
+    def _clear_tree(self):
         for i, child in enumerate(self.get_children()):
             self.delete(i)
     
-    def populate_tree(self, entries: tuple[str]):
-        for i, entry in enumerate(entries):
+    def populate_tree(self):
+        self._clear_tree()
+        for i, child in enumerate(self.osi_folder.children):
+            entry = (child.ftype, child.fname)
             self.insert("", 'end', iid=i, values=entry)
     
-    def return_selection(self):
+    def _return_selection(self, i):
         # Try Statement blocks errors if nothing is selected
         try:
             self.osi_folder.selection = int(self.focus())
@@ -543,6 +547,7 @@ class _FileTree(tk.Treeview):
         self.heading(self.TREE_HEADERS[1], text="File Name", anchor='w')
         self.column(self.TREE_HEADERS[0], stretch=False, width=100, anchor='center')
         self.column(self.TREE_HEADERS[1], stretch=False, width=300, anchor='w')
+        self.bind('<<TreeviewSelect>>', self._return_selection)
  
 class _FilePanel(tk.Frame):
     
@@ -550,7 +555,7 @@ class _FilePanel(tk.Frame):
         for child in self.winfo_children():
             child.pack_forget()
             
-    def refresh(self, mode: int):
+    def refresh(self):
         """Refresh Panel Functions
 
         Args:
@@ -561,6 +566,13 @@ class _FilePanel(tk.Frame):
              Done if applicable
         """
         self._clear_frame()
+        if self.osi_folder.type == self.osi_folder.FolderType.EMPTY:
+            mode = 0
+        elif self.osi_folder.type == self.osi_folder.FolderType.FOLDER:
+            mode = 1
+        elif self.osi_folder.type == self.osi_folder.FolderType.FILES:
+            mode = 2
+        
         if mode == 0 or mode == 2:
             self.cmd_iabove_button.pack(padx=5, pady=5, side='top')
         if mode == 0 or mode == 2:
@@ -576,8 +588,10 @@ class _FilePanel(tk.Frame):
             self.cmd_openpdf_button.pack(padx=5, pady=5, side='top')
         if self.done_button:
             self.cmd_done_button.pack(padx=5, pady=5, side='top')
+            
+        self.file_tree.populate_tree()
     
-    def __init__(self, master, mode: int, osi_folder: OsiFolder, file_table: FileTable, return_cmd = None):
+    def __init__(self, master, file_tree: _FileTree, osi_folder: OsiFolder, file_table: FileTable, return_cmd = None):
         """Create a panel of functions for the _FileTree view
 
         Args:
@@ -590,28 +604,49 @@ class _FilePanel(tk.Frame):
             file_functions (list): A list of functions each button will command,\n
              if None is supplied as the last function (return function), the return button will not appear
         """
+        self.file_tree = file_tree
+        self.osi_folder = osi_folder
+        
         def _insert_above():
             _insert_file(osi_folder, file_table, True)
+            self.refresh()
             
         def _insert_below():
             _insert_file(osi_folder, file_table, False)
+            self.refresh()
         
         def _delete():
             _delete_selection(osi_folder, file_table)
+            self.refresh()
+            
+        def _insert_folder():
+            osi_folder._insert_folder()
+            self.refresh()
+        
+        def _enter_folder():
+            osi_folder.enter_folder()
+            self.refresh()
+            
+        def _prev_folder():
+            osi_folder.prev_folder()
+            self.refresh()
+            
+        def _open_pdf():
+            open_pdf(osi_folder.children[osi_folder.selection].fpath)
         
         tk.Frame.__init__(self, master)
-        self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=_insert_file)
+        self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=_insert_above)
         self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=_insert_below)
-        self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=osi_folder._insert_folder)
+        self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=_insert_folder)
         self.cmd_delete_button = tk.Button(master=self, text="Delete Selected", width = 15, command=_delete)
-        self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=osi_folder.enter_folder)
-        self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=osi_folder.prev_folder)
-        self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=open_pdf)
+        self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=_enter_folder)
+        self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=_prev_folder)
+        self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=_open_pdf)
         self.done_button = False
         if return_cmd != None:
             self.cmd_done_button = tk.Button(master=self, text="Done", width=15, command=return_cmd)
             self.done_button = True
-        self.refresh(mode)
+        self.refresh()
         
 class _EcnTree(tk.Treeview):
     
@@ -660,22 +695,20 @@ class _EcnPanel(tk.Frame):
            
 class _ActionWindow(tk.Frame):
     
-    def __init__(self, master, cmd_view, cmd_ecn):
+    def __init__(self, master, cmd_view, file_view, cmd_ecn):
         tk.Frame.__init__(self, master)
         
         # View Drawing
         cmd_viewdrawing_button = tk.Button(master=self, text="View Drawing", width=20, command=cmd_view)
         cmd_viewdrawing_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
-        self.cmd_viewdrawing_var = tk.StringVar()
-        cmd_viewdrawing_entry = tk.Entry(master=self, textvariable=self.cmd_viewdrawing_var, width=20)
-        cmd_viewdrawing_entry.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
+        
+        # File Mnagement
+        cmd_viewfiles_button = tk.Button(master=self, text="View/Edit Files", width=20, command=file_view)
+        cmd_viewfiles_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
         
         # Upload Engineering Change Notice
         cmd_uploadecn_button = tk.Button(master=self, text="Upload ECN", width=20, command=cmd_ecn)
-        cmd_uploadecn_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
-        self.cmd_uploadecn_var = tk.StringVar()
-        cmd_uploadecn_entry = tk.Entry(master=self, textvariable=self.cmd_uploadecn_var, width=20)
-        cmd_uploadecn_entry.grid(row=1, column=1, padx=5, pady=5, sticky='nswe')
+        cmd_uploadecn_button.grid(row=2, column=0, padx=5, pady=5, sticky='nswe')
         
 class _DrawingViewWindow(tk.Frame):
     
@@ -767,7 +800,7 @@ class ProductionFileFrame(tk.Frame):
             widget.destroy()
             
     def _launch_drawing_view(self):
-        dwg_number = self.active_frame.cmd_viewdrawing_var.get()
+        dwg_number = Querybox.get_string("Enter Drawing Number Below")
         try:
             dwg_paths = self.file_table.get_file_paths(dwg_number)
         except KeyError:
@@ -783,9 +816,11 @@ class ProductionFileFrame(tk.Frame):
         # Clear Window and Pack New Frame
         self._clear_window()
         active_frame = tk.Frame(self)
-        file_panel = _FilePanel(active_frame, 0, osi_folder, self.file_table, self._launch_action_window)
+        file_tree = _FileTree(active_frame, osi_folder)
+        file_tree.grid(row=0, column=1, padx=5, pady=5, sticky='nswe')
+        file_panel = _FilePanel(active_frame, file_tree, osi_folder, self.file_table, self._launch_action_window)
+        file_panel.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
         active_frame.pack(side="top",padx=5, pady=5)
-        
     
     # still needs refactored
     def _launch_ecn_window(self):
@@ -797,7 +832,12 @@ class ProductionFileFrame(tk.Frame):
             
     def _launch_action_window(self):
         self._clear_window()
-        self.active_frame = _ActionWindow(self, self._launch_drawing_view, self._launch_ecn_window)
+        self.active_frame = _ActionWindow(
+            self,
+            self._launch_drawing_view,
+            self._launch_directory_window,
+            self._launch_ecn_window
+        )
         self.active_frame.pack(side="top",padx=5, pady=5)
     
     def __init__(self, master):
