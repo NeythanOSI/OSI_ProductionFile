@@ -99,7 +99,7 @@ class OsiFolder():
         self.root = child.fpath
         self._scan_folder()
     
-    def _prev_folder(self):
+    def prev_folder(self):
         """Return to the parent folder of the current root directory, limits to the production drawings folder"""
         if self.root == self.start_path:    # don't let user out of the scope of the program
             return
@@ -116,7 +116,7 @@ class OsiFolder():
 class DrawingDrive():
     """ Collection of data and functions to handle where production drawings are stored """
     
-    def get_drawings(Folder: Path) -> dict[str, list[Path]]:
+    def get_drawings(self, Folder: Path) -> dict[str, list[Path]]:
         """Walks through the directory and all subfolders of that directory and returns a dictionary containing
         all Pathlib Paths where the drawings are found using the drawing number as a key.
 
@@ -194,17 +194,16 @@ class DrawingDrive():
             
         return index + drawing
 
-    def serialize_files(self, selection: int, inc_selection: bool, change: int):
+    def serialize_files(self, directory: OsiFolder, selection: int, inc_selection: bool, change: int):
         old_children = list()
         new_children = list()
-        for i in range(selection, self.directory.children.__len__()):
+        for i in range(selection, directory.children.__len__()):
             if not inc_selection:       # Skip first iteration to avoid updating selected file
                 inc_selection = True    # Stops this section from looping
                 continue
             
-            
             # Index the child by the change and create a new path for renaming the file
-            child = self.directory.children[i]
+            child = directory.children[i]
             old_children.append((get_dwg_number_rev(child.fpath)[0], child.fpath))  # Save data for updating the file_table
             file_name = self.change_index(child.fname, change)
             file_path = child.fpath.parent.joinpath(file_name)
@@ -212,21 +211,21 @@ class DrawingDrive():
             
             # Update the child
             child.fpath.rename(file_path)
-            self.directory.children[selection] = self.directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
+            directory.children[selection] = directory.FolderChild(file_path, file_name, child.fsuffix, child.ftype)
             
         # Update the build table
         for i, child in enumerate(old_children):
             self.update_file_table(child[0], child[1], new_children[i])
             
         # Do a refresh
-        self.directory._scan_folder()
+        directory._scan_folder()
 
-    def _insert_folder(self, folder_name):
-        folder = self.directory.root.joinpath(folder_name)
+    def _insert_folder(self, directory: OsiFolder, folder_name):
+        folder = directory.root.joinpath(folder_name)
         mkdir(folder)
-        self.directory._scan_folder()
+        directory._scan_folder()
     
-    def _insert_file(self, selection: int, above: bool = True):
+    def _insert_file(self, directory: OsiFolder, selection: int, above: bool = True):
         
         file_path = Path(askopenfilename(initialdir="X:"))
         if file_path.name == "":
@@ -234,7 +233,7 @@ class DrawingDrive():
         
         if above:
             # Get the selected files index
-            selection_name = self.directory.children[selection].fname
+            selection_name = directory.children[selection].fname
             i = self.get_index_length(selection_name)+1
             index = selection_name[:i]
             
@@ -242,7 +241,7 @@ class DrawingDrive():
             self.serialize_files(selection, True, 1)
         else:
             # Get the selected files index and incriment
-            selection_name = self.directory.children[selection].fname
+            selection_name = directory.children[selection].fname
             i = self.get_index_length(selection_name)+1
             index = selection_name[:i]
             index = self.change_index(index, 1)
@@ -251,7 +250,7 @@ class DrawingDrive():
             self.serialize_files(selection, False, 1)
             
         # Filling below, means stealing the below selected, and indexing below selected
-        file_path = Path(copy(src=file_path, dst=self.directory.root))
+        file_path = Path(copy(src=file_path, dst=directory.root))
         file_path_new = file_path.parent.joinpath(index + file_path.name)
         file_path = file_path.rename(file_path_new)
         
@@ -259,9 +258,9 @@ class DrawingDrive():
         self.add_file_table_entry(get_dwg_number_rev(file_path)[0], file_path)
             
         # Updates
-        self.directory._scan_folder()
+        directory._scan_folder()
     
-    def _delete_selection(self, selection: int):
+    def _delete_selection(self, directory: OsiFolder, selection: int):
         
         def _check_dir_empty() -> bool:
             """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
@@ -271,7 +270,7 @@ class DrawingDrive():
                 return False
         def _check_directory() -> bool:
             """Returns: Returns True if folder contains only directories, Returns False if files are present"""
-            for child in self.directory.children:
+            for child in directory.children:
                 if child.fpath.is_dir():
                     continue
                 else:
@@ -280,7 +279,7 @@ class DrawingDrive():
         def _check_no_children(selection) -> bool:
             """Returns: Returns True if folder does not contain children, Returns False if children are present,
                 or if there is error"""
-            folder_path = self.directory.children[selection].fpath
+            folder_path = directory.children[selection].fpath
             try:
                 if len(listdir(folder_path)) == 0:
                     return True
@@ -289,8 +288,8 @@ class DrawingDrive():
             except:
                 return False
             
-        file_path: Path = self.directory.children[selection].fpath
-        file_type: int = self.directory.children[selection].ftype
+        file_path: Path = directory.children[selection].fpath
+        file_type: int = directory.children[selection].ftype
         
         if file_type == OsiFolder.FolderType.FOLDER:
             # Code to run for deleting folders
@@ -316,7 +315,7 @@ class DrawingDrive():
         else:
             return
 
-        self.directory._scan_folder()
+        directory._scan_folder()
 
     def _update_drawings(self, dwg_path: Path):
         dwg_number = get_dwg_number_rev(dwg_path)[0]
@@ -335,9 +334,14 @@ class DrawingDrive():
             # Update Build Table
             self.file_table[dwg_number][self.file_table[dwg_number].index(file_path)] = new_file     
 
-    def __init__(self, directory: OsiFolder):
-        self.directory = directory
-        self.file_table: dict[str, list[Path]] = self.get_drawings(self.directory.start_path)
+    def _get_file_paths(self, drawing: str) -> list[str, Path]:
+        entries = list()
+        for entry in self.file_table[drawing]:
+            entries.append((None, entry))
+        return entries
+
+    def __init__(self, drive_root: Path):
+        self.file_table: dict[str, list[Path]] = self.get_drawings(drive_root)
 
 class EcnFileManager():
     
@@ -522,7 +526,7 @@ class _FilePanel(tk.Frame):
         if self.done_button:
             self.cmd_done_button.pack(padx=5, pady=5, side='top')
     
-    def __init__(self, master, mode: int, file_functions: list):
+    def __init__(self, master, mode: int, drive: DrawingDrive, osi_folder: OsiFolder, return_cmd = None):
         """Create a panel of functions for the _FileTree view
 
         Args:
@@ -540,12 +544,12 @@ class _FilePanel(tk.Frame):
         self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=file_functions[1])
         self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=file_functions[2])
         self.cmd_delete_button = tk.Button(master=self, text="Delete Selected", width = 15, command=file_functions[3])
-        self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=file_functions[4])
-        self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=file_functions[5])
-        self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=file_functions[6])
+        self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=osi_folder.enter_folder)
+        self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=osi_folder.prev_folder)
+        self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=open_pdf)
         self.done_button = False
-        if file_functions[7] != None:
-            self.cmd_done_button = tk.Button(master=self, text="Done", width=15, command=file_functions[7])
+        if return_cmd != None:
+            self.cmd_done_button = tk.Button(master=self, text="Done", width=15, command=return_cmd)
             self.done_button = True
         self.refresh(mode)
         
@@ -593,7 +597,7 @@ class _EcnPanel(tk.Frame):
         # Button Cancel
         cmd_return_button = tk.Button(master=self, text="Return", width = 15, command=ecn_functions[2])
         cmd_return_button.grid(row=3, column=0, padx=5, pady=5, sticky='nswe')  
-      
+           
 class _ActionWindow(tk.Frame):
     
     def __init__(self, master, cmd_view, cmd_ecn):
@@ -615,7 +619,7 @@ class _ActionWindow(tk.Frame):
         
 class _DrawingViewWindow(tk.Frame):
     
-    def __init__(self, master, build_table, drawing, return_cmd):
+    def __init__(self, master, file_paths, return_cmd):
         tk.Frame.__init__(self, master)
         
         # Widgets
@@ -625,31 +629,19 @@ class _DrawingViewWindow(tk.Frame):
         cmd_return_button = tk.Button(self, text="Done", command=return_cmd)
         cmd_return_button.grid(row=1, column=0, padx=5, pady=5, sticky='nswe')
         
+        drawing_view_frame.populate_tree(file_paths)
+        
         # Populate Tree with Drawing Locations
+        """
         entries = list()
         try:
             for entry in build_table[drawing]:
                 entries.append((None, entry))
         except KeyError:
             pass
-        drawing_view_frame.populate_tree(entries)
+        """ 
 
 class _EcnWindow(tk.Frame):
-    
-    def _approve_change(self):
-        """Pushes the new revision for ecn change with running change disposition """
-        selection = self.ecn_tree.return_selection()
-        ecn_change: EcnFileManager.EcnChange = self.ecn_changes[selection]
-        
-        if ecn_change.disposition != "Running Change":
-            return
-        
-        ecn_drawings = self.ecn_file.ecn_drawings
-        
-        dwg_number = ecn_change.dwg_number
-        dwg_rev = ecn_change.new_revision
-        dwg_name = dwg_number + '-' + dwg_rev + '.pdf'
-        dwg_src = ecn_drawings.joinpath(dwg_name)
         
     def _clear_window(self):
         for widget in self.winfo_children():
@@ -708,32 +700,50 @@ class _EcnWindow(tk.Frame):
         self._launch_action_window()
         
 class ProductionFileFrame(tk.Frame):
+    """ Class that manager this portion of the program, combines ui and functions """
     
     def _clear_window(self):
         for widget in self.winfo_children():
             widget.destroy()
+            
+    def _launch_drawing_view(self):
+        dwg_number = self.active_frame.cmd_viewdrawing_var.get()
+        try:
+            dwg_paths = self.drive._get_file_paths(dwg_number)
+        except KeyError:
+            Messagebox.ok(f"Part number {dwg_number} not in directory")
+            return
+        self._clear_window()
+        self.active_frame = _DrawingViewWindow(self, dwg_paths, self._launch_action_window)
+        self.active_frame.pack(side="top", padx=5, pady=5)
+    
+    def _launch_directory_window(self):
+        osi_folder = OsiFolder(PROJDIR.WORKING)
+        
+        # Clear Window and Pack New Frame
+        self._clear_window()
+        active_frame = tk.Frame(self)
+        active_frame.pack(side="top",padx=5, pady=5)
+        
+        file_panel = _FilePanel(active_frame, )
+    
+    # still needs refactored
+    def _launch_ecn_window(self):
+        ecn_number = self.active_frame.cmd_uploadecn_var.get()
+        
+        self._clear_window()
+        self.active_frame = _EcnWindow(self, self.build_table, ecn_number, self._launch_action_window)
+        self.active_frame.pack(side="top", padx=5, pady=5)
             
     def _launch_action_window(self):
         self._clear_window()
         self.active_frame = _ActionWindow(self, self._launch_drawing_view, self._launch_ecn_window)
         self.active_frame.pack(side="top",padx=5, pady=5)
     
-    def _launch_drawing_view(self):
-        dwg_number = self.active_frame.cmd_viewdrawing_var.get()
-        self._clear_window()
-        self.active_frame = _DrawingViewWindow(self, self.build_table, dwg_number, self._launch_action_window)
-        self.active_frame.pack(side="top", padx=5, pady=5)
-    
-    def _launch_ecn_window(self):
-        ecn_number = self.active_frame.cmd_uploadecn_var.get()
-        self._clear_window()
-        self.active_frame = _EcnWindow(self, self.build_table, ecn_number, self._launch_action_window)
-        self.active_frame.pack(side="top", padx=5, pady=5)
-    
     def __init__(self, master):
         tk.Frame.__init__(self, master=master)
+        self.drive = DrawingDrive(PROJDIR.WORKING)
         self._launch_action_window()
-        
         
 if __name__ == '__main__':
     root = Root()
