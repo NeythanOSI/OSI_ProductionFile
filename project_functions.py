@@ -6,6 +6,7 @@ from os import walk, scandir
 from pathlib import Path, WindowsPath, PosixPath
 import re
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from StandardOSILib.osi_functions import osi_get_prefix
 from StandardOSILib.osi_directory import PART_NUM_REGEX, OSIDIR
@@ -117,16 +118,17 @@ class EcnChange():
     new_revision: str
     disposition: str
 
-@dataclass
-class FM00037():
-    SHEET: str              = "Bill of Materials"
-    DWGS_FIRST_COL: int     = 0  # Column A = 0
-    DWGS_LAST_COL: int      = 7  # Reference Column A = 0
-    DWGS_FIRST_ROW: int     = 4  # First row with the parent drawings in an ecn
-    REV_COL: int            = 11 # Column Containing Revision
-    DISPOSITION_COL: int    = 12 # Column Containing Disposition
-
 def read_ecn_changes(ecn: Path) -> list[EcnChange]:
+    
+    @dataclass
+    class FM00037():
+        SHEET: str              = "Bill of Materials"
+        DWGS_FIRST_COL: int     = 0  # Column A = 0
+        DWGS_LAST_COL: int      = 7  # Reference Column A = 0
+        DWGS_FIRST_ROW: int     = 4  # First row with the parent drawings in an ecn
+        REV_COL: int            = 11 # Column Containing Revision
+        DISPOSITION_COL: int    = 12 # Column Containing Disposition
+    
     wb = openpyxl.load_workbook(ecn, data_only=True)
     ws = wb[FM00037.SHEET]
     ecn_changes: list[EcnChange] = list()

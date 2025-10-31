@@ -1,6 +1,7 @@
 import ttkbootstrap as tk
 from ttkbootstrap.dialogs import Messagebox
 from tkinter.filedialog import askopenfilename
+import openpyxl
 
 from enum import IntEnum
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from shutil import copy
 from os import scandir, listdir, mkdir, walk
 import webbrowser
 
-from project_functions import EcnFile, get_ecn, read_ecn_changes, EcnChange, get_drawings, get_dwg_number_rev
+from project_functions import read_ecn_changes, get_dwg_number_rev
 from StandardOSILib.osi_directory import OSIDIR
 from project_data import PROJDIR, PROJDATA
 from StandardOSILib.osi_functions import osi_file_load, osi_file_store, replace_file
@@ -115,7 +116,7 @@ class OsiFolder():
 class DrawingDrive():
     """ Collection of data and functions to handle where production drawings are stored """
     
-    def get_drawings(Folder: Path) -> dict[str, list[str]]:
+    def get_drawings(Folder: Path) -> dict[str, list[Path]]:
         """Walks through the directory and all subfolders of that directory and returns a dictionary containing
         all Pathlib Paths where the drawings are found using the drawing number as a key.
 
@@ -317,9 +318,118 @@ class DrawingDrive():
 
         self.directory._scan_folder()
 
+    def _update_drawings(self, dwg_path: Path):
+        dwg_number = get_dwg_number_rev(dwg_path)[0]
+        
+        for file_path in self.file_table[dwg_number]:
+            # Get index of the file being replaced
+            file_name = file_path.name
+            ind_length = self.get_index_length(file_name)+1
+            index = file_name[:ind_length]
+            
+            # Replace file and change name to include index
+            new_file = replace_file(dwg_path, file_path, PROJDIR.BACKUP)
+            rename_file = new_file.parent.joinpath(index + new_file.name)
+            new_file = new_file.rename(rename_file)
+            
+            # Update Build Table
+            self.file_table[dwg_number][self.file_table[dwg_number].index(file_path)] = new_file     
+
     def __init__(self, directory: OsiFolder):
         self.directory = directory
-        self.file_table = get_drawings(self.directory.start_path)
+        self.file_table: dict[str, list[Path]] = self.get_drawings(self.directory.start_path)
+
+class EcnFileManager():
+    
+    class EcnFile(NamedTuple):
+        ecn_name: str
+        ecn_folder: Path
+        ecn_drawings: Path
+        ecn_file: Path
+        
+    class EcnChange(NamedTuple):
+        level: int
+        dwg_number: str
+        new_revision: str
+        disposition: str
+    
+    def get_ecn(self, ecn_number: str) -> EcnFile:
+        ecn_name = "ECN-" + ecn_number
+        ecn_folder = None
+        
+        with scandir(OSIDIR.ECN_FOLDER) as dir:
+            for file in dir:
+                if file.name == ecn_name:
+                    ecn_folder = Path(file.path)
+                    break
+                
+        if ecn_folder == None:
+            raise FileNotFoundError(f"ECN: {ecn_name} does not have a folder in the location {OSIDIR.ECN_FOLDER}")
+        ecn_drawings = ecn_folder.joinpath("Updated Drawings")
+        
+        if not ecn_drawings.exists():
+            raise FileNotFoundError(f"Location: {ecn_folder} does not contain the following folder: Updated Drawings")
+        ecn_file = ecn_folder.joinpath(ecn_name + ".xlsx")
+        if not ecn_file.exists():
+            raise FileNotFoundError(f"Location: {ecn_folder} does not contain an excel ecn file")
+        
+        self.ecn_file = self.EcnFile(ecn_name, ecn_folder, ecn_drawings, ecn_file)
+    
+    def read_ecn_changes(self):
+    
+        @dataclass
+        class FM00037():
+            SHEET: str              = "Bill of Materials"
+            DWGS_FIRST_COL: int     = 0  # Column A = 0
+            DWGS_LAST_COL: int      = 7  # Reference Column A = 0
+            DWGS_FIRST_ROW: int     = 4  # First row with the parent drawings in an ecn
+            REV_COL: int            = 11 # Column Containing Revision
+            DISPOSITION_COL: int    = 12 # Column Containing Disposition
+        
+        wb = openpyxl.load_workbook(self.ecn_file, data_only=True)
+        ws = wb[FM00037.SHEET]
+        ecn_changes: list[EcnFileManager.EcnChange] = list()
+        
+        for row in ws.iter_rows(min_row=FM00037.DWGS_FIRST_ROW, values_only=True):
+
+            empty_row = True
+            for i, value in enumerate(row[FM00037.DWGS_FIRST_COL:FM00037.DWGS_LAST_COL+1]):
+                if value == None or value == "":
+                    continue
+                else:
+                    empty_row = False
+                    break
+                
+            if empty_row == True:
+                continue
+            if row[FM00037.DISPOSITION_COL] == "Old Product":
+                continue
+            
+            try:    # Try except for integer revisions
+                new_revision = row[FM00037.REV_COL].lstrip("-")
+            except AttributeError:
+                new_revision = row[FM00037.REV_COL]
+            
+            ecn_changes.append(self.EcnChange(i, value, new_revision, row[FM00037.DISPOSITION_COL]))
+
+        self.ecn_changes = ecn_changes
+    
+    def find_drawings(self):
+        self.drawings.clear()
+        error_list: list[str] = list()
+        for i, change in enumerate(self.ecn_changes):
+            if change.disposition != "Running Change":
+                continue
+            drawing = self.ecn_file.ecn_drawings.joinpath(change.dwg_number + '-' + change.new_revision + '.pdf')
+            if not drawing.exists():
+                error_list.append(drawing.name)
+                continue
+            self.drawings[i] = drawing
+    
+    def __init__(self):
+        self.ecn_file: EcnFileManager.EcnFile = None
+        self.ecn_changes: list[EcnFileManager.EcnChange] = None
+        self.drawings: dict[int, Path] = dict()
 
 class Root(tk.Window):
     def __init__(self):
@@ -454,7 +564,9 @@ class _EcnTree(tk.Treeview):
         except ValueError:
             return None
     
-    def __init__(self, master):
+    def __init__(self, master, ecn_manager: EcnFileManager):
+        # Link in Data
+        self.ecn_data = ecn_manager
         # Create Tree
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
         self.heading(self.TREE_HEADERS[0], text="Level", anchor='center')
@@ -467,9 +579,11 @@ class _EcnTree(tk.Treeview):
         self.column(self.TREE_HEADERS[3], stretch=False, width=150, anchor='w')
 
 class _EcnPanel(tk.Frame):
-    def __init__(self, master, ecn_functions):
+    def __init__(self, master, ecn_manager: EcnFileManager):
+        # Link in Data
+        self.ecn_data = ecn_manager
+        # Create Frame
         tk.Frame.__init__(self, master)
-        
         # Button Approve
         cmd_push_rev_button = tk.Button(master=self, text="Push Revision", width = 15, command=ecn_functions[0])
         cmd_push_rev_button.grid(row=0, column=0, padx=5, pady=5, sticky='nswe')
@@ -525,7 +639,7 @@ class _EcnWindow(tk.Frame):
     def _approve_change(self):
         """Pushes the new revision for ecn change with running change disposition """
         selection = self.ecn_tree.return_selection()
-        ecn_change: EcnChange = self.ecn_changes[selection]
+        ecn_change: EcnFileManager.EcnChange = self.ecn_changes[selection]
         
         if ecn_change.disposition != "Running Change":
             return
@@ -537,24 +651,6 @@ class _EcnWindow(tk.Frame):
         dwg_name = dwg_number + '-' + dwg_rev + '.pdf'
         dwg_src = ecn_drawings.joinpath(dwg_name)
         
-        if not dwg_src.exists():
-            print(f"source file {dwg_src} to copy to production drive does not exist")
-            return
-        
-        for value in self.build_table[dwg_number]:
-            index = value.name[:4]
-            
-            prod_file = replace_file(dwg_src, value, PROJDIR.BACKUP)
-            
-            file_path = prod_file.parent
-            file_name = prod_file.name
-            file_name = index + file_name
-            
-            new_file = file_path.joinpath(file_name)
-            prod_file = prod_file.rename(new_file)
-            
-            self.build_table[dwg_number][self.build_table[dwg_number].index(value)] = prod_file
-    
     def _clear_window(self):
         for widget in self.winfo_children():
             widget.destroy()
@@ -597,7 +693,6 @@ class _EcnWindow(tk.Frame):
         # Create Data
         self.build_table: dict[str, list[Path]] = build_table
         try:
-            self.ecn_file = get_ecn(ecn_number)
             self.ecn_changes = read_ecn_changes(self.ecn_file.ecn_file)
         except FileNotFoundError:
             self.ecn_file = None
@@ -635,23 +730,10 @@ class ProductionFileFrame(tk.Frame):
         self.active_frame = _EcnWindow(self, self.build_table, ecn_number, self._launch_action_window)
         self.active_frame.pack(side="top", padx=5, pady=5)
     
-    def _launch_file_window(self):
-        """Window that allows naviation through the production files, and adds new files where they belong"""
-        self._clear_window()
-        self.active_frame = tk.Frame(self)
-        self.active_frame.pack(side="top", padx=5, pady=5)
-    
     def __init__(self, master):
         tk.Frame.__init__(self, master=master)
         self._launch_action_window()
         
-        # Globals
-        
-        # Figure out how to thread the build table for better performance at a later date
-        self.build_table: dict[str, list[Path]] = get_drawings(PROJDIR.WORKING)
-        osi_file_store(self.build_table, PROJDATA.FILE_TABLE)
-        for key in self.build_table.keys():
-            print(f"{key} : {self.build_table[key]}")
         
 if __name__ == '__main__':
     root = Root()
