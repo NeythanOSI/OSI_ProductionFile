@@ -93,6 +93,9 @@ class OsiFolder():
         sorted_keys = sorted(child_temp.keys())
         for key in sorted_keys:
             self.children.append(child_temp[key])
+        
+        # Reset the selection to avoid errors
+        self.selection == None
             
         # Determine if the folder is empty
         if self.children.__len__() == 0:
@@ -118,6 +121,8 @@ class OsiFolder():
             self.type = self.FolderType.FOLDER
     
     def enter_folder(self):
+        if self.selection == None:
+            return
         child = self.children[self.selection]
         if child.ftype != self.FolderType.FOLDER:
             return
@@ -126,7 +131,7 @@ class OsiFolder():
     
     def prev_folder(self):
         """Return to the parent folder of the current root directory, limits to the production drawings folder"""
-        if self.root == self.start_path:    # don't let user out of the scope of the program
+        if self.root == self._start_path:    # don't let user out of the scope of the program
             return
         self.root = self.root.parent
         self._scan_folder()
@@ -147,11 +152,13 @@ class OsiFolder():
         self._scan_folder()
     
     def __init__(self, start_path: Path = Path(r"X:")):
-        self.start_path = start_path
-        self.root = start_path
-        self.children: list[OsiFolder.FolderChild] = list()    # String is the File Name in the FolderChild object
-        self.selection = None
-        self.type = None
+        self._start_path = start_path
+        
+        self.root = start_path                                  # Active Folder
+        self.children: list[OsiFolder.FolderChild] = list()     # String is the File Name in the FolderChild object
+        self.selection = None                                   # Set external to class by treeview
+        
+        self.type = None    # Not Used for Anything
         self._scan_folder()
 
 class FileTable():
@@ -245,6 +252,8 @@ def change_index(file_name: str, change: int):
     return index + drawing
 
 def serialize_files(directory: OsiFolder, file_table: FileTable, inc_selection: bool, change: int):
+    if directory.selection == None:
+        return
     old_children = list()
     new_children = list()
     for i in range(directory.selection, directory.children.__len__()):
@@ -271,6 +280,8 @@ def serialize_files(directory: OsiFolder, file_table: FileTable, inc_selection: 
     directory._scan_folder()
 
 def _insert_file(directory: OsiFolder, file_table: FileTable, above: bool = True):
+    if directory.selection == None:
+        return
     
     file_path = Path(askopenfilename(initialdir="X:"))
     if file_path.name == "":
@@ -306,6 +317,8 @@ def _insert_file(directory: OsiFolder, file_table: FileTable, above: bool = True
     directory._scan_folder()
 
 def _delete_selection(directory: OsiFolder, file_table: FileTable):
+    if directory.selection == None:
+        return
     
     def _check_dir_empty() -> bool:
         """Returns: Returns True if folder contains is empty, Returns False if files or folders are present"""
@@ -517,11 +530,13 @@ class _FileTree(tk.Treeview):
     def return_selection(self):
         # Try Statement blocks errors if nothing is selected
         try:
-            return int(self.focus())
+            self.osi_folder.selection = int(self.focus())
         except ValueError:
-            return None
+            self.osi_folder.selection = None
     
-    def __init__(self, master):
+    def __init__(self, master, osi_folder: OsiFolder):
+        # Data
+        self.osi_folder = osi_folder
         # Create Tree
         tk.Treeview.__init__(self, master=master, bootstyle='default', columns=self.TREE_HEADERS, show='headings', height=25)
         self.heading(self.TREE_HEADERS[0], text="File Type", anchor='center')
@@ -586,9 +601,9 @@ class _FilePanel(tk.Frame):
         
         tk.Frame.__init__(self, master)
         self.cmd_iabove_button = tk.Button(master=self, text="Insert Above", width = 15, command=_insert_file)
-        self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=_insert_below[1])
+        self.cmd_ibelow_button = tk.Button(master=self, text="Insert Below", width = 15, command=_insert_below)
         self.cmd_ifolder_button = tk.Button(master=self, text="Insert Folder", width = 15, command=osi_folder._insert_folder)
-        self.cmd_delete_button = tk.Button(master=self, text="Delete Selected", width = 15, command=file_functions[3])
+        self.cmd_delete_button = tk.Button(master=self, text="Delete Selected", width = 15, command=_delete)
         self.cmd_enterfol_button = tk.Button(master=self, text="Enter Folder", width=15, command=osi_folder.enter_folder)
         self.cmd_prevfol_button = tk.Button(master=self, text="Previous Folder", width=15, command=osi_folder.prev_folder)
         self.cmd_openpdf_button = tk.Button(master=self, text="Open PDF", width=15, command=open_pdf)
